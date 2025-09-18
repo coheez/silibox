@@ -1,0 +1,18 @@
+project_name: sili
+builds:
+  - id: sili
+    main: ./cmd/sili
+    env: [CGO_ENABLED=0]
+    goos: [darwin]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X github.com/coheez/silibox/internal/cli.version={{.Version}}
+      - -X github.com/coheez/silibox/internal/cli.commit={{.ShortCommit}}
+      - -X github.com/coheez/silibox/internal/cli.buildDate={{.Date}}
+archives:
+  - format: tar.gz
+checksum:
+  name_template: 'checksums.txt'
+release:
+  draft: true

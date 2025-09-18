@@ -1,0 +1,27 @@
+arch: "aarch64"
+images:
+  - location: "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-arm64.img"
+    arch: "aarch64"
+vmType: "vz"
+cpus: {{.CPUs}}
+memory: "{{.Memory}}"
+disk: "{{.Disk}}"
+mounts:
+  - location: "~"
+    mountPoint: "/mnt/hosthome"
+    writable: false
+    9p: false
+    sshfs: false
+containerd:
+  system: false
+provision:
+  - mode: system
+    script: |
+      #!/bin/sh
+      set -eux
+      apt-get update
+      apt-get install -y podman fuse-overlayfs ca-certificates curl gnupg
+video:
+  display: "none"
+ssh:
+  loadDotSSHPubKeys: true
