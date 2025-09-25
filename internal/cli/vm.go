@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"text/tabwriter"
 
 	"github.com/coheez/silibox/internal/lima"
 	runtimex "github.com/coheez/silibox/internal/runtime"
@@ -12,9 +11,10 @@ import (
 )
 
 var (
-	cpus   int
-	memory string
-	disk   string
+	cpus       int
+	memory     string
+	disk       string
+	statusLive bool
 )
 
 var vmCmd = &cobra.Command{
@@ -34,19 +34,33 @@ var vmStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show Silibox VM status",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		info, err := lima.GetStatus()
+		var status string
+		var err error
+
+		if statusLive {
+			status, err = lima.StatusLive()
+		} else {
+			status, err = lima.Status()
+		}
+
 		if err != nil {
 			return err
 		}
+
 		if outputJSON {
+			// For JSON output, we need structured data
+			info, err := lima.GetStatus()
+			if err != nil {
+				return err
+			}
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
 			return enc.Encode(info)
 		}
-		tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintf(tw, "NAME\tSTATUS\n")
-		fmt.Fprintf(tw, "%s\t%s\n", info.Name, info.Status)
-		return tw.Flush()
+
+		// Simple text output
+		fmt.Println(status)
+		return nil
 	},
 }
 
@@ -74,4 +88,5 @@ func init() {
 	vmUpCmd.Flags().StringVar(&memory, "memory", "8GiB", "RAM (e.g., 8GiB)")
 	vmUpCmd.Flags().StringVar(&disk, "disk", "60GiB", "Disk size")
 	vmStatusCmd.Flags().BoolVarP(&outputJSON, "json", "j", false, "Output JSON")
+	vmStatusCmd.Flags().BoolVarP(&statusLive, "live", "l", false, "Get live status from lima (slower but always current)")
 }

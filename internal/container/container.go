@@ -9,8 +9,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/coheez/silibox/internal/lima"
+	"github.com/coheez/silibox/internal/state"
 )
 
 type CreateConfig struct {
@@ -24,28 +26,68 @@ type CreateConfig struct {
 
 // Create pulls the image and starts a named Podman container with proper bind mounts and UID/GID mapping
 func Create(cfg CreateConfig) error {
-	// Ensure VM is running
-	inst, found, err := lima.GetInstance()
-	if err != nil {
-		return fmt.Errorf("failed to check VM status: %w", err)
-	}
-	if !found || inst.Status != "Running" {
-		return fmt.Errorf("VM is not running (status: %s). Run 'sili vm up' first", inst.Status)
-	}
+	return state.WithLockedState(func(s *state.State) error {
+		// Ensure VM is running
+		vm := s.GetVM()
+		if vm == nil || vm.Status != "running" {
+			return fmt.Errorf("VM is not running. Run 'sili vm up' first")
+		}
 
-	// Get current user UID/GID for mapping
-	uid, gid, err := getCurrentUserIDs()
-	if err != nil {
-		return fmt.Errorf("failed to get user IDs: %w", err)
-	}
+		// Get current user UID/GID for mapping
+		uid, gid, err := getCurrentUserIDs()
+		if err != nil {
+			return fmt.Errorf("failed to get user IDs: %w", err)
+		}
 
-	// Pull the image
-	if err := pullImage(cfg.Image); err != nil {
-		return fmt.Errorf("failed to pull image %s: %w", cfg.Image, err)
-	}
+		// Pull the image
+		if err := pullImage(cfg.Image); err != nil {
+			return fmt.Errorf("failed to pull image %s: %w", cfg.Image, err)
+		}
 
-	// Create the container
-	return createContainer(cfg, uid, gid)
+		// Create the container
+		if err := createContainer(cfg, uid, gid); err != nil {
+			return err
+		}
+
+		// Get absolute project path
+		projectPath, err := filepath.Abs(cfg.ProjectDir)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute project path: %w", err)
+		}
+
+		// Create environment info
+		envInfo := &state.EnvInfo{
+			Name:        cfg.Name,
+			Image:       cfg.Image,
+			Runtime:     "podman",
+			ProjectPath: projectPath,
+			ContainerID: cfg.Name, // Using name as container ID for now
+			Volumes:     make(map[string]string),
+			Mounts: map[string]state.Mount{
+				"work": {
+					Host:  projectPath,
+					Guest: cfg.WorkingDir,
+					RW:    true,
+				},
+			},
+			Ports: make(map[string]int),
+			User: state.UserInfo{
+				UID:  uid,
+				GID:  gid,
+				Name: cfg.User,
+			},
+			Status:        "running",
+			Persistent:    false,
+			LastActive:    time.Now(),
+			ExportedShims: make([]string, 0),
+		}
+
+		// Update state
+		s.UpsertEnv(envInfo)
+		s.TouchVMActivity()
+
+		return nil
+	})
 }
 
 func getCurrentUserIDs() (int, int, error) {

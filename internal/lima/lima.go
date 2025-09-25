@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"text/template"
 	"time"
+
+	"github.com/coheez/silibox/internal/state"
 )
 
 const (
@@ -33,55 +35,110 @@ type StatusInfo struct {
 }
 
 func Up(cfg Config) error {
-	if err := ensureTemplate(cfg); err != nil {
-		return err
-	}
+	return state.WithLockedState(func(s *state.State) error {
+		if err := ensureTemplate(cfg); err != nil {
+			return err
+		}
 
-	// Check if instance already exists
-	if exists, err := instanceExists(); err != nil {
-		return err
-	} else if !exists {
-		// Create the instance using the recommended command
-		yamlPath := filepath.Join(os.Getenv("HOME"), ".sili", "lima.yaml")
-		cmd := exec.Command("limactl", "create", "--name="+Instance, yamlPath)
+		// Check if instance already exists
+		if exists, err := instanceExists(); err != nil {
+			return err
+		} else if !exists {
+			// Create the instance using the recommended command
+			yamlPath := filepath.Join(os.Getenv("HOME"), ".sili", "lima.yaml")
+			cmd := exec.Command("limactl", "create", "--name="+Instance, yamlPath)
+			cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+			if err := cmd.Run(); err != nil {
+				return err
+			}
+		}
+
+		// Start the instance
+		cmd := exec.Command("limactl", "start", Instance)
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 		if err := cmd.Run(); err != nil {
 			return err
 		}
-	}
 
-	// Start the instance
-	cmd := exec.Command("limactl", "start", Instance)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	if err := cmd.Run(); err != nil {
-		return err
-	}
+		// Wait for the VM to reach Running state
+		if err := waitForRunning(); err != nil {
+			return err
+		}
 
-	// Wait for the VM to reach Running state
-	return waitForRunning()
+		// Update state
+		configData, err := os.ReadFile(filepath.Join(os.Getenv("HOME"), ".sili", "lima.yaml"))
+		if err != nil {
+			return fmt.Errorf("failed to read config for checksum: %w", err)
+		}
+
+		vmInfo := &state.VMInfo{
+			Name:         Instance,
+			Backend:      "lima-vz",
+			Profile:      "balanced",
+			CPUs:         cfg.CPUs,
+			Memory:       cfg.Memory,
+			Disk:         cfg.Disk,
+			Status:       "running",
+			ConfigSHA256: state.ComputeConfigSHA256(configData),
+			LastActive:   time.Now(),
+		}
+		s.SetVM(vmInfo)
+
+		return nil
+	})
 }
 
 func Status() (string, error) {
-	inst, found, err := getInstance()
-	if err != nil {
-		return "", err
+	return StatusFromState(false)
+}
+
+func StatusLive() (string, error) {
+	return StatusFromState(true)
+}
+
+func StatusFromState(forceLive bool) (string, error) {
+	if forceLive {
+		// Get live status from lima
+		inst, found, err := getInstance()
+		if err != nil {
+			return "", err
+		}
+		if !found {
+			return "VM not found", nil
+		}
+		return fmt.Sprintf("VM status: %s", inst.Status), nil
 	}
-	if !found {
+
+	// Read from state (fast)
+	s, err := state.Load()
+	if err != nil {
+		return "", fmt.Errorf("failed to load state: %w", err)
+	}
+
+	vm := s.GetVM()
+	if vm == nil {
 		return "VM not found", nil
 	}
-	return fmt.Sprintf("VM status: %s", inst.Status), nil
+
+	return fmt.Sprintf("VM status: %s", vm.Status), nil
 }
 
 // GetStatus returns structured status information for the silibox instance.
 func GetStatus() (StatusInfo, error) {
-	inst, found, err := getInstance()
+	s, err := state.Load()
 	if err != nil {
-		return StatusInfo{}, err
+		return StatusInfo{}, fmt.Errorf("failed to load state: %w", err)
 	}
-	if !found {
+
+	vm := s.GetVM()
+	if vm == nil {
 		return StatusInfo{Name: Instance, Status: "NotFound"}, nil
 	}
-	return StatusInfo(inst), nil
+
+	return StatusInfo{
+		Name:   vm.Name,
+		Status: vm.Status,
+	}, nil
 }
 
 // GetInstance returns the current instance if present.
@@ -90,25 +147,34 @@ func GetInstance() (LimaInstance, bool, error) {
 }
 
 func Stop() error {
-	// Check current state
-	inst, found, err := getInstance()
-	if err != nil {
-		return err
-	}
-	if !found || inst.Status == "Stopped" {
-		// Already stopped or not created; treat as success
+	return state.WithLockedState(func(s *state.State) error {
+		// Check current state
+		inst, found, err := getInstance()
+		if err != nil {
+			return err
+		}
+		if !found || inst.Status == "Stopped" {
+			// Already stopped or not created; treat as success
+			s.UpdateVMStatus("stopped")
+			return nil
+		}
+
+		// Ask Lima to stop the instance
+		cmd := exec.Command("limactl", "stop", Instance)
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		if err := cmd.Run(); err != nil {
+			return err
+		}
+
+		// Wait until the instance reports Stopped to ensure cleanup
+		if err := waitForState("Stopped", 2*time.Minute); err != nil {
+			return err
+		}
+
+		// Update state
+		s.UpdateVMStatus("stopped")
 		return nil
-	}
-
-	// Ask Lima to stop the instance
-	cmd := exec.Command("limactl", "stop", Instance)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-
-	// Wait until the instance reports Stopped to ensure cleanup
-	return waitForState("Stopped", 2*time.Minute)
+	})
 }
 
 func instanceExists() (bool, error) {
