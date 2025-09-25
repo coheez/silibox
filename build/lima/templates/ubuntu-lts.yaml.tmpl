@@ -2,16 +2,15 @@ arch: "aarch64"
 images:
   - location: "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-arm64.img"
     arch: "aarch64"
+    digest: "sha256:6177a7958f0168e38ca58c13961bdc613d71b9771148add03bc4ad637eb01b8d"
 vmType: "vz"
 cpus: {{.CPUs}}
 memory: "{{.Memory}}"
 disk: "{{.Disk}}"
 mounts:
-  - location: "~"
-    mountPoint: "/mnt/hosthome"
-    writable: false
-    9p: false
-    sshfs: false
+- location: "~"
+  writable: false
+  virtiofs: {}
 containerd:
   system: false
 provision:
