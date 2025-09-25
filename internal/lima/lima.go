@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"text/template"
+	"time"
 )
 
 const (
@@ -46,15 +47,25 @@ func Up(cfg Config) error {
 	// Start the instance
 	cmd := exec.Command("limactl", "start", Instance)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	// Wait for the VM to reach Running state
+	return waitForRunning()
 }
 
 func Status() (string, error) {
-	out, err := exec.Command("limactl", "list", "--json").CombinedOutput()
+	status, err := getInstanceStatus()
 	if err != nil {
 		return "", err
 	}
-	return string(out), nil
+
+	if status == "NotFound" {
+		return "VM not found", nil
+	}
+
+	return fmt.Sprintf("VM status: %s", status), nil
 }
 
 func Stop() error {
@@ -133,4 +144,57 @@ func ensureTemplate(cfg Config) error {
 		return err
 	}
 	return os.WriteFile(yamlPath, buf.Bytes(), 0o644)
+}
+
+// waitForRunning waits for the VM to reach Running state with a timeout
+func waitForRunning() error {
+	timeout := 5 * time.Minute
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	timeoutC := time.After(timeout)
+
+	for {
+		select {
+		case <-ticker.C:
+			status, err := getInstanceStatus()
+			if err != nil {
+				return fmt.Errorf("failed to check VM status: %w", err)
+			}
+			switch status {
+			case "Running":
+				return nil
+			case "Error", "Broken":
+				return fmt.Errorf("VM failed to start, status: %s", status)
+			}
+		case <-timeoutC:
+			return fmt.Errorf("timeout waiting for VM to start (waited %v)", timeout)
+		}
+	}
+}
+
+// getInstanceStatus returns the current status of the silibox instance
+func getInstanceStatus() (string, error) {
+	out, err := exec.Command("limactl", "list", "--json").CombinedOutput()
+	if err != nil {
+		return "", err
+	}
+
+	// Parse JSON output to find our instance
+	var instances []LimaInstance
+	if err := json.Unmarshal(out, &instances); err != nil {
+		// If it's not an array, try parsing as a single object
+		var instance LimaInstance
+		if err := json.Unmarshal(out, &instance); err != nil {
+			return "", fmt.Errorf("failed to parse lima output: %w", err)
+		}
+		instances = []LimaInstance{instance}
+	}
+
+	for _, instance := range instances {
+		if instance.Name == Instance {
+			return instance.Status, nil
+		}
+	}
+
+	return "NotFound", nil
 }
