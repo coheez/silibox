@@ -101,8 +101,8 @@ func createContainer(cfg CreateConfig, uid, gid int) error {
 		args = append(args, "-e", fmt.Sprintf("%s=%s", key, value))
 	}
 
-	// Add the image
-	args = append(args, cfg.Image)
+	// Add the image and a command to keep it running
+	args = append(args, cfg.Image, "sleep", "infinity")
 
 	cmd := exec.Command("limactl", args...)
 	cmd.Stdout = os.Stdout
@@ -151,4 +151,49 @@ func Exec(name string, command []string) error {
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 	return cmd.Run()
+}
+
+// Enter starts an interactive shell in a named container
+func Enter(name string, shell string) error {
+	// Check if container exists and is running
+	running, err := isContainerRunning(name)
+	if err != nil {
+		return fmt.Errorf("failed to check container status: %w", err)
+	}
+
+	if !running {
+		return fmt.Errorf("container %s not found or not running", name)
+	}
+
+	// Use the specified shell or default to bash
+	if shell == "" {
+		shell = "bash"
+	}
+
+	// Start interactive shell with proper terminal settings
+	args := []string{
+		"shell", lima.Instance, "--", "podman", "exec",
+		"-it", // interactive + allocate pseudo-TTY
+		name,
+		shell,
+	}
+
+	cmd := exec.Command("limactl", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
+	// Set terminal to raw mode for proper interactive behavior
+	return cmd.Run()
+}
+
+// isContainerRunning checks if a container is running
+func isContainerRunning(name string) (bool, error) {
+	cmd := exec.Command("limactl", "shell", lima.Instance, "--", "podman", "ps", "--filter", fmt.Sprintf("name=%s", name), "--format", "{{.Names}}")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, err
+	}
+
+	return strings.TrimSpace(string(output)) == name, nil
 }
