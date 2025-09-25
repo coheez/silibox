@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/coheez/silibox/internal/container"
@@ -15,6 +16,7 @@ var (
 	createUser  string
 	enterName   string
 	enterShell  string
+	runName     string
 )
 
 var createCmd = &cobra.Command{
@@ -49,8 +51,35 @@ var enterCmd = &cobra.Command{
 	},
 }
 
+var runCmd = &cobra.Command{
+	Use:   "run",
+	Short: "Run arbitrary commands inside a container (non-interactive)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return fmt.Errorf("no command specified")
+		}
+
+		result, err := container.Run(runName, args)
+		if err != nil {
+			return err
+		}
+
+		// Print stdout and stderr
+		if result.Stdout != "" {
+			fmt.Print(result.Stdout)
+		}
+		if result.Stderr != "" {
+			fmt.Fprint(os.Stderr, result.Stderr)
+		}
+
+		// Exit with the same code as the command
+		os.Exit(result.ExitCode)
+		return nil // This line won't be reached due to os.Exit above
+	},
+}
+
 func init() {
-	rootCmd.AddCommand(createCmd, enterCmd)
+	rootCmd.AddCommand(createCmd, enterCmd, runCmd)
 	createCmd.Flags().StringVarP(&createName, "name", "n", "silibox-dev", "Container name")
 	createCmd.Flags().StringVarP(&createImage, "image", "i", "ubuntu:22.04", "Container image")
 	createCmd.Flags().StringVarP(&createDir, "dir", "d", ".", "Project directory to bind mount")
@@ -58,4 +87,5 @@ func init() {
 	createCmd.Flags().StringVarP(&createUser, "user", "u", "", "User to run as (default: current user)")
 	enterCmd.Flags().StringVarP(&enterName, "name", "n", "silibox-dev", "Container name to enter")
 	enterCmd.Flags().StringVarP(&enterShell, "shell", "s", "bash", "Shell to use (bash, sh, zsh, etc.)")
+	runCmd.Flags().StringVarP(&runName, "name", "n", "silibox-dev", "Container name to run command in")
 }

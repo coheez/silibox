@@ -1,6 +1,7 @@
 package container
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -151,6 +152,51 @@ func Exec(name string, command []string) error {
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 	return cmd.Run()
+}
+
+// RunResult contains the result of a non-interactive command execution
+type RunResult struct {
+	ExitCode int
+	Stdout   string
+	Stderr   string
+}
+
+// Run executes a command in a named container non-interactively and returns the result
+func Run(name string, command []string) (RunResult, error) {
+	// Check if container exists and is running
+	running, err := isContainerRunning(name)
+	if err != nil {
+		return RunResult{}, fmt.Errorf("failed to check container status: %w", err)
+	}
+
+	if !running {
+		return RunResult{}, fmt.Errorf("container %s not found or not running", name)
+	}
+
+	args := append([]string{"shell", lima.Instance, "--", "podman", "exec", name}, command...)
+	cmd := exec.Command("limactl", args...)
+
+	// Capture stdout and stderr
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	// Run the command and capture exit code
+	err = cmd.Run()
+	exitCode := 0
+	if err != nil {
+		if exitError, ok := err.(*exec.ExitError); ok {
+			exitCode = exitError.ExitCode()
+		} else {
+			return RunResult{}, fmt.Errorf("failed to run command: %w", err)
+		}
+	}
+
+	return RunResult{
+		ExitCode: exitCode,
+		Stdout:   stdout.String(),
+		Stderr:   stderr.String(),
+	}, nil
 }
 
 // Enter starts an interactive shell in a named container
