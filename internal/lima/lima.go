@@ -26,6 +26,12 @@ type LimaInstance struct {
 	Status string `json:"status"`
 }
 
+// StatusInfo represents a minimal view of the VM status for display/JSON.
+type StatusInfo struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}
+
 func Up(cfg Config) error {
 	if err := ensureTemplate(cfg); err != nil {
 		return err
@@ -56,16 +62,26 @@ func Up(cfg Config) error {
 }
 
 func Status() (string, error) {
-	status, err := getInstanceStatus()
+	inst, found, err := getInstance()
 	if err != nil {
 		return "", err
 	}
-
-	if status == "NotFound" {
+	if !found {
 		return "VM not found", nil
 	}
+	return fmt.Sprintf("VM status: %s", inst.Status), nil
+}
 
-	return fmt.Sprintf("VM status: %s", status), nil
+// GetStatus returns structured status information for the silibox instance.
+func GetStatus() (StatusInfo, error) {
+	inst, found, err := getInstance()
+	if err != nil {
+		return StatusInfo{}, err
+	}
+	if !found {
+		return StatusInfo{Name: Instance, Status: "NotFound"}, nil
+	}
+	return StatusInfo(inst), nil
 }
 
 func Stop() error {
@@ -156,15 +172,18 @@ func waitForRunning() error {
 	for {
 		select {
 		case <-ticker.C:
-			status, err := getInstanceStatus()
+			inst, found, err := getInstance()
 			if err != nil {
 				return fmt.Errorf("failed to check VM status: %w", err)
 			}
-			switch status {
+			if !found {
+				continue // Keep waiting if instance not found yet
+			}
+			switch inst.Status {
 			case "Running":
 				return nil
 			case "Error", "Broken":
-				return fmt.Errorf("VM failed to start, status: %s", status)
+				return fmt.Errorf("VM failed to start, status: %s", inst.Status)
 			}
 		case <-timeoutC:
 			return fmt.Errorf("timeout waiting for VM to start (waited %v)", timeout)
@@ -172,29 +191,26 @@ func waitForRunning() error {
 	}
 }
 
-// getInstanceStatus returns the current status of the silibox instance
-func getInstanceStatus() (string, error) {
+// getInstance returns the current instance if present.
+func getInstance() (LimaInstance, bool, error) {
 	out, err := exec.Command("limactl", "list", "--json").CombinedOutput()
 	if err != nil {
-		return "", err
+		return LimaInstance{}, false, err
 	}
 
-	// Parse JSON output to find our instance
 	var instances []LimaInstance
 	if err := json.Unmarshal(out, &instances); err != nil {
-		// If it's not an array, try parsing as a single object
 		var instance LimaInstance
 		if err := json.Unmarshal(out, &instance); err != nil {
-			return "", fmt.Errorf("failed to parse lima output: %w", err)
+			return LimaInstance{}, false, fmt.Errorf("failed to parse lima output: %w", err)
 		}
 		instances = []LimaInstance{instance}
 	}
 
 	for _, instance := range instances {
 		if instance.Name == Instance {
-			return instance.Status, nil
+			return instance, true, nil
 		}
 	}
-
-	return "NotFound", nil
+	return LimaInstance{}, false, nil
 }
