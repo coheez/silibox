@@ -85,9 +85,25 @@ func GetStatus() (StatusInfo, error) {
 }
 
 func Stop() error {
+	// Check current state
+	inst, found, err := getInstance()
+	if err != nil {
+		return err
+	}
+	if !found || inst.Status == "Stopped" {
+		// Already stopped or not created; treat as success
+		return nil
+	}
+
+	// Ask Lima to stop the instance
 	cmd := exec.Command("limactl", "stop", Instance)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	// Wait until the instance reports Stopped to ensure cleanup
+	return waitForState("Stopped", 2*time.Minute)
 }
 
 func instanceExists() (bool, error) {
@@ -187,6 +203,41 @@ func waitForRunning() error {
 			}
 		case <-timeoutC:
 			return fmt.Errorf("timeout waiting for VM to start (waited %v)", timeout)
+		}
+	}
+}
+
+// waitForState waits until the instance reports the target state or times out.
+func waitForState(target string, timeout time.Duration) error {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	timeoutC := time.After(timeout)
+
+	for {
+		select {
+		case <-ticker.C:
+			inst, found, err := getInstance()
+			if err != nil {
+				return fmt.Errorf("failed to check VM status: %w", err)
+			}
+			if !found {
+				if target == "NotFound" {
+					return nil
+				}
+				// If target is Stopped but instance disappeared, consider it stopped
+				if target == "Stopped" {
+					return nil
+				}
+				continue
+			}
+			if inst.Status == target {
+				return nil
+			}
+			if inst.Status == "Error" || inst.Status == "Broken" {
+				return fmt.Errorf("VM entered failure state: %s", inst.Status)
+			}
+		case <-timeoutC:
+			return fmt.Errorf("timeout waiting for VM state %q (waited %v)", target, timeout)
 		}
 	}
 }
