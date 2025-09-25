@@ -84,6 +84,11 @@ func GetStatus() (StatusInfo, error) {
 	return StatusInfo(inst), nil
 }
 
+// GetInstance returns the current instance if present.
+func GetInstance() (LimaInstance, bool, error) {
+	return getInstance()
+}
+
 func Stop() error {
 	// Check current state
 	inst, found, err := getInstance()
