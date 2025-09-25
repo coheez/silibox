@@ -2,7 +2,9 @@ package cli
 
 import (
 	"fmt"
+
 	"github.com/coheez/silibox/internal/lima"
+	runtimex "github.com/coheez/silibox/internal/runtime"
 	"github.com/spf13/cobra"
 )
 
@@ -46,8 +48,16 @@ var vmStopCmd = &cobra.Command{
 	},
 }
 
+var vmProbeCmd = &cobra.Command{
+	Use:   "probe",
+	Short: "Run runtime probe inside VM (podman hello)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runtimex.Probe()
+	},
+}
+
 func init() {
-	vmCmd.AddCommand(vmUpCmd, vmStatusCmd, vmStopCmd)
+	vmCmd.AddCommand(vmUpCmd, vmStatusCmd, vmStopCmd, vmProbeCmd)
 	vmUpCmd.Flags().IntVar(&cpus, "cpus", 4, "vCPUs")
 	vmUpCmd.Flags().StringVar(&memory, "memory", "8GiB", "RAM (e.g., 8GiB)")
 	vmUpCmd.Flags().StringVar(&disk, "disk", "60GiB", "Disk size")
