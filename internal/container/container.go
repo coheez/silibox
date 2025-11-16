@@ -175,7 +175,32 @@ func Stop(name string) error {
 	cmd := exec.Command("limactl", "shell", lima.Instance, "--", "podman", "stop", name)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	// Update state
+	return state.WithLockedState(func(s *state.State) error {
+		s.UpdateEnvStatus(name, "stopped")
+		return nil
+	})
+}
+
+// Start starts a stopped container
+func Start(name string) error {
+	cmd := exec.Command("limactl", "shell", lima.Instance, "--", "podman", "start", name)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	// Update state
+	return state.WithLockedState(func(s *state.State) error {
+		s.UpdateEnvStatus(name, "running")
+		s.TouchEnvActivity(name)
+		return nil
+	})
 }
 
 // Remove removes a named container
@@ -183,6 +208,36 @@ func Remove(name string) error {
 	cmd := exec.Command("limactl", "shell", lima.Instance, "--", "podman", "rm", name)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	// Update state
+	return state.WithLockedState(func(s *state.State) error {
+		s.RemoveEnv(name)
+		return nil
+	})
+}
+
+// Logs displays logs from a container
+func Logs(name string, follow bool, tail int) error {
+	args := []string{"shell", lima.Instance, "--", "podman", "logs"}
+
+	if follow {
+		args = append(args, "-f")
+	}
+
+	if tail > 0 {
+		args = append(args, "--tail", fmt.Sprintf("%d", tail))
+	}
+
+	args = append(args, name)
+
+	cmd := exec.Command("limactl", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
 	return cmd.Run()
 }
 

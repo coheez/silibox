@@ -17,6 +17,13 @@ var (
 	enterName   string
 	enterShell  string
 	runName     string
+	stopName    string
+	rmName      string
+	rmForce     bool
+	startName   string
+	logsName    string
+	logsFollow  bool
+	logsTail    int
 )
 
 var createCmd = &cobra.Command{
@@ -78,14 +85,106 @@ var runCmd = &cobra.Command{
 	},
 }
 
+var psCmd = &cobra.Command{
+	Use:     "ps",
+	Aliases: []string{"list"},
+	Short:   "List running containers in the VM",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		containers, err := container.List()
+		if err != nil {
+			return fmt.Errorf("failed to list containers: %w", err)
+		}
+
+		if len(containers) == 0 {
+			fmt.Println("No containers running")
+			return nil
+		}
+
+		fmt.Println("CONTAINER NAME")
+		for _, name := range containers {
+			fmt.Println(name)
+		}
+		return nil
+	},
+}
+
+var stopCmd = &cobra.Command{
+	Use:   "stop <name>",
+	Short: "Stop a running container",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+		if err := container.Stop(name); err != nil {
+			return fmt.Errorf("failed to stop container %s: %w", name, err)
+		}
+		fmt.Printf("Container %s stopped\n", name)
+		return nil
+	},
+}
+
+var rmCmd = &cobra.Command{
+	Use:   "rm <name>",
+	Short: "Remove a container",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+
+		// If force flag is set, stop the container first
+		if rmForce {
+			container.Stop(name) // Ignore errors if already stopped
+		}
+
+		if err := container.Remove(name); err != nil {
+			return fmt.Errorf("failed to remove container %s: %w", name, err)
+		}
+		fmt.Printf("Container %s removed\n", name)
+		return nil
+	},
+}
+
+var startCmd = &cobra.Command{
+	Use:   "start <name>",
+	Short: "Start a stopped container",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+		if err := container.Start(name); err != nil {
+			return fmt.Errorf("failed to start container %s: %w", name, err)
+		}
+		fmt.Printf("Container %s started\n", name)
+		return nil
+	},
+}
+
+var logsCmd = &cobra.Command{
+	Use:   "logs <name>",
+	Short: "View container logs",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+		if err := container.Logs(name, logsFollow, logsTail); err != nil {
+			return fmt.Errorf("failed to get logs for container %s: %w", name, err)
+		}
+		return nil
+	},
+}
+
 func init() {
-	rootCmd.AddCommand(createCmd, enterCmd, runCmd)
+	rootCmd.AddCommand(createCmd, enterCmd, runCmd, psCmd, stopCmd, rmCmd, startCmd, logsCmd)
+
 	createCmd.Flags().StringVarP(&createName, "name", "n", "silibox-dev", "Container name")
 	createCmd.Flags().StringVarP(&createImage, "image", "i", "ubuntu:22.04", "Container image")
 	createCmd.Flags().StringVarP(&createDir, "dir", "d", ".", "Project directory to bind mount")
 	createCmd.Flags().StringVarP(&createWork, "workdir", "w", "/workspace", "Working directory inside container")
 	createCmd.Flags().StringVarP(&createUser, "user", "u", "", "User to run as (default: current user)")
+
 	enterCmd.Flags().StringVarP(&enterName, "name", "n", "silibox-dev", "Container name to enter")
 	enterCmd.Flags().StringVarP(&enterShell, "shell", "s", "bash", "Shell to use (bash, sh, zsh, etc.)")
+
 	runCmd.Flags().StringVarP(&runName, "name", "n", "silibox-dev", "Container name to run command in")
+
+	rmCmd.Flags().BoolVarP(&rmForce, "force", "f", false, "Force remove (stop if running)")
+
+	logsCmd.Flags().BoolVarP(&logsFollow, "follow", "f", false, "Follow log output")
+	logsCmd.Flags().IntVarP(&logsTail, "tail", "n", 50, "Number of lines to show from the end of the logs")
 }
