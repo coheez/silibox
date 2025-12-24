@@ -1,11 +1,277 @@
 # Silibox
 
-**Linux environments, native macOS UX.**  
-CLI: `sili`
+**Linux environments, native macOS UX**
 
-## Quickstart
+Silibox provides seamless Linux development environments on macOS using Lima (Linux on Mac) and Podman containers. Get the power of Linux tooling with the convenience of native macOS integration.
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- **macOS** (Apple Silicon recommended)
+- **Go 1.22+** for building from source
+- **Lima** for Linux VM management
+
+### Installation
+
+1. **Install Lima:**
+   ```bash
+   brew install lima
+   ```
+
+2. **Build Silibox:**
+   ```bash
+   git clone https://github.com/coheez/silibox.git
+   cd silibox
+   make build
+   ```
+
+3. **Install globally (optional):**
+   ```bash
+   make install
+   ```
+
+## 📖 Usage
+
+### 1. Check Your Environment
+
 ```bash
-brew install lima
-make build
 ./bin/sili doctor
-./bin/sili vm up --cpus 6 --memory 12GiB
+```
+
+This will verify:
+- ✅ Lima installation
+- ✅ VM status
+- ✅ Podman availability in VM
+- ✅ State consistency
+
+### 2. Start the VM
+
+```bash
+./bin/sili vm up
+```
+
+This creates and starts a Lima VM with:
+- Ubuntu 22.04 LTS
+- Apple Virtualization.framework (vz)
+- Podman pre-installed
+- 4 vCPUs, 8GB RAM, 60GB disk (configurable)
+
+### 3. Create a Development Environment
+
+```bash
+# Basic usage (uses current directory)
+./bin/sili create --name my-project
+
+# Custom configuration
+./bin/sili create \
+  --name my-app \
+  --image ubuntu:22.04 \
+  --dir /path/to/project \
+  --workdir /workspace
+```
+
+This creates a Podman container with:
+- Your project directory mounted at `/workspace`
+- Your home directory mounted read-only at `/home/host`
+- UID/GID mapping for seamless file permissions
+- Environment variables from your host
+
+### 4. Enter Your Environment
+
+```bash
+# Enter interactive shell
+./bin/sili enter --name my-project
+
+# Use different shell
+./bin/sili enter --name my-project --shell zsh
+```
+
+### 5. Run Commands
+
+```bash
+# Run single commands (non-interactive)
+./bin/sili run --name my-project -- ls -la
+./bin/sili run --name my-project -- make build
+./bin/sili run --name my-project -- python script.py
+```
+
+## 🛠️ Commands Reference
+
+### VM Management
+
+```bash
+# Start/restart VM
+./bin/sili vm up
+
+# Check VM status
+./bin/sili vm status
+./bin/sili vm status --live    # Get live status from lima
+
+# Stop VM
+./bin/sili vm stop
+
+# Test runtime (hello-world container)
+./bin/sili vm probe
+```
+
+### Container Management
+
+```bash
+# Create environment
+./bin/sili create --name my-env --image ubuntu:22.04
+
+# Enter interactive shell
+./bin/sili enter --name my-env
+
+# Run commands
+./bin/sili run --name my-env -- command args
+
+# View state
+./bin/sili state show
+```
+
+### Diagnostics
+
+```bash
+# Comprehensive health check
+./bin/sili doctor
+
+# Show version info
+./bin/sili version
+```
+
+## 🔧 Configuration
+
+### VM Resources
+
+```bash
+./bin/sili vm up --cpus 8 --memory 16GiB --disk 100GiB
+```
+
+### Container Settings
+
+```bash
+./bin/sili create \
+  --name my-env \
+  --image ubuntu:22.04 \
+  --dir /path/to/project \
+  --workdir /workspace \
+  --user myuser
+```
+
+## 📁 Project Structure
+
+```
+silibox/
+├── cmd/sili/main.go              # CLI entry point
+├── internal/
+│   ├── cli/                      # Cobra commands
+│   ├── lima/                     # VM management
+│   ├── container/                # Container operations
+│   ├── runtime/                  # Runtime probes
+│   └── state/                    # State management
+├── build/lima/templates/         # Lima VM templates
+├── scripts/dev/                  # Development scripts
+└── Makefile                      # Build system
+```
+
+## 🏗️ Development
+
+### Building
+
+```bash
+# Build binary
+make build
+
+# Run tests
+make test
+
+# Lint code
+make lint
+
+# Install globally
+make install
+```
+
+### State Management
+
+Silibox maintains state in `~/.sili/state.json`:
+- VM configuration and status
+- Created environments
+- Port allocations
+- Shim registrations
+
+### Debugging
+
+```bash
+# View current state
+./bin/sili state show
+
+# Check live VM status
+./bin/sili vm status --live
+
+# Run diagnostics
+./bin/sili doctor
+```
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+**VM won't start:**
+```bash
+./bin/sili doctor
+./bin/sili vm stop
+./bin/sili vm up
+```
+
+**Container not found:**
+```bash
+./bin/sili create --name my-env
+./bin/sili enter --name my-env
+```
+
+**Permission issues:**
+- Silibox automatically maps your UID/GID
+- Check file ownership in mounted directories
+
+**State inconsistencies:**
+```bash
+./bin/sili vm status --live
+./bin/sili state show
+```
+
+### Getting Help
+
+1. Run `./bin/sili doctor` for diagnostics
+2. Check `~/.sili/state.json` for state issues
+3. Use `--live` flags to bypass state cache
+4. View logs with `limactl show-ssh silibox`
+
+## 🚧 Alpha Status
+
+This is an internal alpha release. Features may change and bugs are expected.
+
+**Known Limitations:**
+- Only supports macOS (Apple Silicon preferred)
+- Requires Lima for VM management
+- Container networking is basic
+- No automatic port forwarding yet
+
+**Planned Features:**
+- Port forwarding and service exposure
+- Volume management
+- Shim generation for seamless tool usage
+- Multi-environment support
+- Auto-sleep for resource management
+
+## 📄 License
+
+Apache 2.0 - see [LICENSE](LICENSE) for details.
+
+---
+
+**Happy coding! 🎉**
+
+For questions or issues, please check the troubleshooting section or run `./bin/sili doctor`.

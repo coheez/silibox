@@ -1,0 +1,10 @@
+Title,Description,Priority,Label,Project,Status
+Implement `sili create` (core),"Create a named Podman container inside the Lima VM. Pull image if missing. Mount project dir to /work. Record container_id in state.json.",High,runtime,Silibox v0.1,Todo
+UID/GID user mapping in container,"Inside container, create a user matching host UID/GID and exec as that user by default. Prevent permission issues on mounted files.",High,runtime,Silibox v0.1,Todo
+Implement `sili enter`,"Interactive shell into a running container using podman exec via limactl shell. Default cwd=/work.",High,cli,Silibox v0.1,Todo
+Implement `sili run`,"Run non-interactive commands inside container. Capture exit code and forward stdout/stderr.",High,cli,Silibox v0.1,Todo
+Implement `sili ls`,"List all known environments from state.json with status (running/stopped/image).",Medium,cli,Silibox v0.1,Todo
+Implement `sili stop <env>`,"Stop a running container without deleting it. Update env status in state.",Medium,runtime,Silibox v0.1,Todo
+Implement `sili rm <env>`,"Remove container and associated volumes. Clean state.json entries safely.",Medium,runtime,Silibox v0.1,Todo
+Persist env metadata in state store,"Store image, container_id, mounts, volumes, ports, status, last_active per env.",High,state,Silibox v0.1,Todo
+Basic error handling + recovery,"Detect missing containers or desynced state. Provide actionable error messages.",Medium,infra,Silibox v0.1,Todo

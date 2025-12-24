@@ -1,0 +1,10 @@
+Title,Description,Priority,Label,Project,Status
+Auto-detect project language stack,"Detect Node, Python, Rust, Go projects based on files (package.json, pyproject.toml, Cargo.toml).",High,perf,Silibox v0.1,Todo
+Volume mapping for hot directories,"Automatically move node_modules, .venv, target, .cargo, .pnpm-store into Podman volumes.",High,perf,Silibox v0.1,Todo
+One-time migration for existing dirs,"If hot dirs already exist on host, rsync them into volumes and clean host copy after confirmation.",Medium,perf,Silibox v0.1,Todo
+Watcher command detection,"Detect commands like pnpm dev, vite, pytest -f, cargo watch and tag as watcher workloads.",Medium,perf,Silibox v0.1,Todo
+Auto-enable polling for watchers,"Set env vars or flags (CHOKIDAR_USEPOLLING=1, --watch-poll) when watchers run on mounted dirs.",Medium,perf,Silibox v0.1,Todo
+Implement `sili export-bin`,"Create host shims that proxy commands into containers (node, python, psql). Register in state.json.",High,cli,Silibox v0.1,Todo
+Add `~/.sili/bin` PATH helper,"Detect if ~/.sili/bin is on PATH and prompt user to add it if missing.",Low,cli,Silibox v0.1,Todo
+Port mapping support,"Allow declaring ports in env creation. Track and avoid port collisions via state.json.",High,networking,Silibox v0.1,Todo
+Implement `sili ports`,"List active port forwards with friendly localhost URLs.",Medium,cli,Silibox v0.1,Todo

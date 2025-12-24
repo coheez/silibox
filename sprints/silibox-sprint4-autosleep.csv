@@ -1,0 +1,10 @@
+Title,Description,Priority,Label,Project,Status
+Implement idle detection agent,"Monitor container CPU, disk I/O, active shells, and port activity to determine idleness.",High,agent,Silibox v0.1,Todo
+Track last_active timestamps,"Update env and VM last_active fields on enter/run/port access.",High,state,Silibox v0.1,Todo
+Auto-stop containers on idle,"Stop non-persistent containers when idle threshold exceeded.",High,agent,Silibox v0.1,Todo
+Auto-stop VM on full idle,"Stop Lima VM when no active containers and idle threshold reached.",High,agent,Silibox v0.1,Todo
+Auto-wake VM on demand,"Ensure any sili command automatically starts the VM if stopped.",High,vm,Silibox v0.1,Todo
+Persistent services flag,"Allow envs or services (e.g. Postgres) to opt out of autosleep.",Medium,agent,Silibox v0.1,Todo
+Implement `sili vm sleep` and `sili vm wake`,"Manual override commands for power management.",Medium,cli,Silibox v0.1,Todo
+Autosleep configuration,"Allow idle timeout configuration via config file or flags.",Low,config,Silibox v0.1,Todo
+Improve `sili doctor` with fixes,"Detect orphaned containers, missing volumes, stale state and offer --fix option.",Medium,cli,Silibox v0.1,Todo

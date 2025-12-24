@@ -1,0 +1,36 @@
+Title,Description,Priority,Label,Project,Status
+Repo bootstrap and licensing,"Create GitHub repo 'silibox' (private). Add LICENSE (Apache-2.0), CODEOWNERS, .gitignore, CONTRIBUTING.md, SECURITY.md.",High,infra,Silibox v0.1,Todo
+Go module init,"Initialize Go module 'github.com/<you>/silibox'. Add go.mod (Go 1.22).",High,cli,Silibox v0.1,Todo
+Cobra CLI scaffold (`sili`),"Add Cobra-based CLI skeleton with root cmd and subcommands: `version`, `doctor`, `vm` (group).",High,cli,Silibox v0.1,Todo
+Implement `sili version`,"Print version, git commit, build date (ldflags).",Medium,cli,Silibox v0.1,Todo
+Add Makefile and dev scripts,"Makefile targets: build, test, lint, run, install. Script: scripts/dev/check_deps.sh for Lima/Podman checks.",High,infra,Silibox v0.1,Todo
+Implement `sili doctor` (deps check v0),"Detect: macOS, Go version, lima presence, vz support, podman presence. Provide actionable fixes.",High,cli,Silibox v0.1,Todo
+Lima template generator v0,"Generate ~/.sili/lima.yaml with Ubuntu LTS, vz, virtiofs, CPU/RAM flags. Do not start VM yet.",High,vm,Silibox v0.1,Todo
+Implement `sili vm up` (MVP),"If lima instance not present, create from template and start. Else start. Log progress and errors.",High,vm,Silibox v0.1,Todo
+Implement `sili vm status` (MVP),"Report lima instance status (Running/Stopped/Error) in table/JSON.",Medium,vm,Silibox v0.1,Todo
+Implement `sili vm stop` (MVP),"Gracefully stop lima instance; handle already-stopped.",Medium,vm,Silibox v0.1,Todo
+Pods runtime probe (inside VM),"After `vm up`, ensure podman installed or install. Cache a tiny 'hello' container and run once.",Medium,runtime,Silibox v0.1,Todo
+Goreleaser config,"Add .goreleaser.yaml for darwin/arm64 and darwin/amd64. Produce tarballs and checksums.",Medium,release,Silibox v0.1,Todo
+GitHub Actions CI,"Actions: build+test on PR, lint (golangci-lint), release on tags via goreleaser.",Medium,infra,Silibox v0.1,Todo
+README (Getting Started),"Top-level quickstart: install Go, build `sili`, run `sili doctor`, `sili vm up`. Add roadmap link.",High,docs,Silibox v0.1,Todo
+
+silibox/
+├─ cmd/sili/main.go
+├─ internal/
+│  ├─ cli/            # cobra root + subcommands
+│  ├─ lima/           # lima yaml generation, start/stop/status
+│  ├─ runtime/        # podman probes (hello-world test)
+│  ├─ container/      # podman container management (create/stop/exec)
+│  ├─ testutil/       # test utilities
+│  └─ execx/          # subprocess helper (limactl, ssh, podman) [planned]
+├─ scripts/
+│  └─ dev/check_deps.sh
+├─ build/
+│  └─ lima/templates/ubuntu-lts.yaml.tmpl
+├─ .goreleaser.yaml
+├─ Makefile
+├─ go.mod
+├─ go.sum
+├─ LICENSE
+├─ README.md
+└─ .gitignore
