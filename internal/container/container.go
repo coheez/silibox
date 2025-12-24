@@ -12,16 +12,18 @@ import (
 	"time"
 
 	"github.com/coheez/silibox/internal/lima"
+	"github.com/coheez/silibox/internal/stack"
 	"github.com/coheez/silibox/internal/state"
 )
 
 type CreateConfig struct {
-	Name        string
-	Image       string
-	ProjectDir  string
-	WorkingDir  string
-	User        string
-	Environment map[string]string
+	Name                  string
+	Image                 string
+	ProjectDir            string
+	WorkingDir            string
+	User                  string
+	Environment           map[string]string
+	DetectAndPrepareVolumes bool // Auto-detect project stack and create volumes for hot dirs
 }
 
 // Create pulls the image and starts a named Podman container with proper bind mounts and UID/GID mapping
@@ -39,30 +41,71 @@ func Create(cfg CreateConfig) error {
 			return fmt.Errorf("failed to get user IDs: %w", err)
 		}
 
-		// Pull the image
-		if err := pullImage(cfg.Image); err != nil {
-			return fmt.Errorf("failed to pull image %s: %w", cfg.Image, err)
-		}
+	// Get absolute project path
+	projectPath, err := filepath.Abs(cfg.ProjectDir)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute project path: %w", err)
+	}
 
-		// Create the container
-		if err := createContainer(cfg, uid, gid); err != nil {
-			return err
-		}
-
-		// Get absolute project path
-		projectPath, err := filepath.Abs(cfg.ProjectDir)
+	// Detect project stack and prepare volumes if requested
+	volumes := make(map[string]string)
+	if cfg.DetectAndPrepareVolumes {
+		projectInfo, err := stack.DetectStack(projectPath)
 		if err != nil {
-			return fmt.Errorf("failed to get absolute project path: %w", err)
+			fmt.Fprintf(os.Stderr, "Warning: Failed to detect project stack: %v\n", err)
+		} else if projectInfo.Type != stack.Unknown {
+			fmt.Printf("Detected %s project\n", projectInfo.Type)
+			
+			// Create volumes for hot directories
+			// Only create volumes for directories that don't already exist on the host
+			// This avoids mounting over existing directories and causing conflicts
+			for _, hotDir := range projectInfo.HotDirs {
+				// Skip wildcard patterns (e.g., *.egg-info)
+				if strings.Contains(hotDir, "*") {
+					continue
+				}
+				
+				// Check if directory already exists on host
+				hostPath := filepath.Join(projectPath, hotDir)
+				if _, err := os.Stat(hostPath); err == nil {
+					// Directory exists, skip volume creation
+					// TODO: Implement migration logic in Phase 3
+					continue
+				}
+				
+				// Generate volume name
+				volumeName := sanitizeVolumeName(fmt.Sprintf("%s-%s", cfg.Name, hotDir))
+				
+				// Create the volume
+				if err := createVolume(volumeName); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: Failed to create volume %s: %v\n", volumeName, err)
+					continue
+				}
+				
+				fmt.Printf("Created volume %s for %s\n", volumeName, hotDir)
+				volumes[hotDir] = volumeName
+			}
 		}
+	}
 
-		// Create environment info
-		envInfo := &state.EnvInfo{
-			Name:        cfg.Name,
-			Image:       cfg.Image,
-			Runtime:     "podman",
-			ProjectPath: projectPath,
-			ContainerID: cfg.Name, // Using name as container ID for now
-			Volumes:     make(map[string]string),
+	// Pull the image
+	if err := pullImage(cfg.Image); err != nil {
+		return fmt.Errorf("failed to pull image %s: %w", cfg.Image, err)
+	}
+
+	// Create the container with volumes
+	if err := createContainer(cfg, uid, gid, volumes); err != nil {
+		return err
+	}
+
+	// Create environment info
+	envInfo := &state.EnvInfo{
+		Name:        cfg.Name,
+		Image:       cfg.Image,
+		Runtime:     "podman",
+		ProjectPath: projectPath,
+		ContainerID: cfg.Name, // Using name as container ID for now
+		Volumes:     volumes,
 			Mounts: map[string]state.Mount{
 				"work": {
 					Host:  projectPath,
@@ -116,7 +159,7 @@ func pullImage(image string) error {
 	return cmd.Run()
 }
 
-func createContainer(cfg CreateConfig, uid, gid int) error {
+func createContainer(cfg CreateConfig, uid, gid int, volumes map[string]string) error {
 	// Get absolute paths
 	projectDir, err := filepath.Abs(cfg.ProjectDir)
 	if err != nil {
@@ -134,10 +177,23 @@ func createContainer(cfg CreateConfig, uid, gid int) error {
 		"-d", // detached
 		"--name", cfg.Name,
 		"--user", fmt.Sprintf("%d:%d", uid, gid),
-		"-v", fmt.Sprintf("%s:/workspace", projectDir), // project dir (writable)
-		"-v", fmt.Sprintf("%s:/home/host:ro", homeDir), // home dir (read-only)
-		"-w", cfg.WorkingDir,
 	}
+
+	// CRITICAL: Mount volumes for hot directories FIRST using --mount syntax
+	// The --mount syntax creates the mount point if it doesn't exist
+	// When we mount the project directory at /workspace later, these volume mounts
+	// will take precedence for their specific paths (e.g., /workspace/node_modules)
+	for hotDir, volumeName := range volumes {
+		mountPath := filepath.Join("/workspace", hotDir)
+		// Use --mount instead of -v for better control
+		args = append(args, "--mount", fmt.Sprintf("type=volume,source=%s,destination=%s", volumeName, mountPath))
+	}
+
+	// Now mount the project directory at /workspace
+	// The volume mounts above will "punch through" and remain visible
+	args = append(args, "-v", fmt.Sprintf("%s:/workspace", projectDir)) // project dir (writable)
+	args = append(args, "-v", fmt.Sprintf("%s:/home/host:ro", homeDir)) // home dir (read-only)
+	args = append(args, "-w", cfg.WorkingDir)
 
 	// Add environment variables
 	for key, value := range cfg.Environment {
@@ -373,4 +429,28 @@ func isContainerRunning(name string) (bool, error) {
 	}
 
 	return strings.TrimSpace(string(output)) == name, nil
+}
+
+// createVolume creates a Podman volume inside the Lima VM
+func createVolume(volumeName string) error {
+	cmd := exec.Command("limactl", "shell", lima.Instance, "--", "podman", "volume", "create", volumeName)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to create volume: %w (output: %s)", err, string(output))
+	}
+	return nil
+}
+
+// sanitizeVolumeName converts a directory path into a valid volume name
+// Replaces problematic characters with hyphens
+func sanitizeVolumeName(name string) string {
+	// Replace slashes, dots at start, and other special chars
+	name = strings.ReplaceAll(name, "/", "-")
+	name = strings.ReplaceAll(name, ".", "-")
+	name = strings.ReplaceAll(name, "_", "-")
+	// Remove leading/trailing hyphens
+	name = strings.Trim(name, "-")
+	// Convert to lowercase for consistency
+	name = strings.ToLower(name)
+	return name
 }
