@@ -17,7 +17,7 @@ const (
 	StateDir      = ".sili"
 	StateFile     = "state.json"
 	LockFile      = "state.lock"
-	SchemaVersion = 1
+	SchemaVersion = 2 // Incremented for MigratedDirs field
 )
 
 type State struct {
@@ -63,6 +63,7 @@ type EnvInfo struct {
 	Persistent    bool              `json:"persistent"`
 	LastActive    time.Time         `json:"last_active"`
 	ExportedShims []string          `json:"exported_shims"`
+	MigratedDirs  map[string]string `json:"migrated_dirs,omitempty"` // Maps dir name to backup path
 }
 
 type Mount struct {
@@ -362,8 +363,15 @@ func getCurrentUserIDs() (int, int) {
 }
 
 func migrate(state *State, from, to int) error {
-	// For now, just update schema version
-	// Future migrations can be added here
+	// Migrate from v1 to v2: add MigratedDirs field to all environments
+	if from < 2 && to >= 2 {
+		for _, env := range state.Envs {
+			if env.MigratedDirs == nil {
+				env.MigratedDirs = make(map[string]string)
+			}
+		}
+	}
+	
 	state.Schema = to
 	return nil
 }

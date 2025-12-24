@@ -19,6 +19,7 @@ var (
 	createWork          string
 	createUser          string
 	createDetectVolumes bool
+	createNoMigrate     bool
 	enterName           string
 	enterShell          string
 	runName             string
@@ -46,7 +47,8 @@ var createCmd = &cobra.Command{
 			WorkingDir:              createWork,
 			User:                    createUser,
 			Environment:             env,
-			DetectAndPrepareVolumes: createDetectVolumes, // Opt-in - needs Phase 3 migration for production use
+			DetectAndPrepareVolumes: createDetectVolumes,
+			NoMigrate:               createNoMigrate,
 		}
 		return container.Create(cfg)
 	},
@@ -219,7 +221,8 @@ func init() {
 	createCmd.Flags().StringVarP(&createDir, "dir", "d", ".", "Project directory to bind mount")
 	createCmd.Flags().StringVarP(&createWork, "workdir", "w", "/workspace", "Working directory inside container")
 	createCmd.Flags().StringVarP(&createUser, "user", "u", "", "User to run as (default: current user)")
-	createCmd.Flags().BoolVar(&createDetectVolumes, "detect-volumes", false, "[Experimental] Enable automatic project stack detection and volume creation. Currently requires Phase 3 migration logic for existing projects.")
+	createCmd.Flags().BoolVar(&createDetectVolumes, "detect-volumes", false, "[Experimental] Enable automatic project stack detection and volume creation")
+	createCmd.Flags().BoolVar(&createNoMigrate, "no-migrate", false, "Skip migration prompts for existing directories when using --detect-volumes")
 	enterCmd.Flags().StringVarP(&enterName, "name", "n", "silibox-dev", "Container name to enter")
 	enterCmd.Flags().StringVarP(&enterShell, "shell", "s", "bash", "Shell to use (bash, sh, zsh, etc.)")
 	runCmd.Flags().StringVarP(&runName, "name", "n", "silibox-dev", "Container name to run command in")

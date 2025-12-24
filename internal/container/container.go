@@ -17,13 +17,14 @@ import (
 )
 
 type CreateConfig struct {
-	Name                  string
-	Image                 string
-	ProjectDir            string
-	WorkingDir            string
-	User                  string
-	Environment           map[string]string
+	Name                    string
+	Image                   string
+	ProjectDir              string
+	WorkingDir              string
+	User                    string
+	Environment             map[string]string
 	DetectAndPrepareVolumes bool // Auto-detect project stack and create volumes for hot dirs
+	NoMigrate               bool // Skip migration prompts for existing directories
 }
 
 // Create pulls the image and starts a named Podman container with proper bind mounts and UID/GID mapping
@@ -49,6 +50,8 @@ func Create(cfg CreateConfig) error {
 
 	// Detect project stack and prepare volumes if requested
 	volumes := make(map[string]string)
+	migratedDirs := make(map[string]string) // Track migrations for state
+	
 	if cfg.DetectAndPrepareVolumes {
 		projectInfo, err := stack.DetectStack(projectPath)
 		if err != nil {
@@ -57,33 +60,67 @@ func Create(cfg CreateConfig) error {
 			fmt.Printf("Detected %s project\n", projectInfo.Type)
 			
 			// Create volumes for hot directories
-			// Only create volumes for directories that don't already exist on the host
-			// This avoids mounting over existing directories and causing conflicts
+			// Strategy: Only create volumes for directories that:
+			// 1. Already exist and user wants to migrate (for performance)
+			// 2. Don't create volumes pre-emptively - let them be created on host first
+			//    This avoids the mount conflict issue with directories that don't exist yet
 			for _, hotDir := range projectInfo.HotDirs {
 				// Skip wildcard patterns (e.g., *.egg-info)
 				if strings.Contains(hotDir, "*") {
 					continue
 				}
 				
-				// Check if directory already exists on host
-				hostPath := filepath.Join(projectPath, hotDir)
-				if _, err := os.Stat(hostPath); err == nil {
-					// Directory exists, skip volume creation
-					// TODO: Implement migration logic in Phase 3
-					continue
-				}
-				
 				// Generate volume name
 				volumeName := sanitizeVolumeName(fmt.Sprintf("%s-%s", cfg.Name, hotDir))
 				
-				// Create the volume
-				if err := createVolume(volumeName); err != nil {
-					fmt.Fprintf(os.Stderr, "Warning: Failed to create volume %s: %v\n", volumeName, err)
-					continue
+				// Check if directory already exists on host
+				hostPath := filepath.Join(projectPath, hotDir)
+				if stat, err := os.Stat(hostPath); err == nil && stat.IsDir() {
+					// Directory exists - check if empty
+					entries, err := os.ReadDir(hostPath)
+					if err != nil || len(entries) == 0 {
+						// Empty or unreadable - just remove it and create volume
+						os.Remove(hostPath)
+					} else if !cfg.NoMigrate {
+						// Directory has contents - offer migration
+						size, _ := GetDirSize(hostPath)
+						fmt.Printf("\nFound existing %s (%s)\n", hotDir, FormatBytes(size))
+						fmt.Printf("Migrate to volume for better performance? [Y/n]: ")
+						
+						var response string
+						fmt.Scanln(&response)
+						
+						response = strings.ToLower(strings.TrimSpace(response))
+						if response == "" || response == "y" || response == "yes" {
+							// Create volume first
+							if err := createVolume(volumeName); err != nil {
+								fmt.Fprintf(os.Stderr, "Warning: Failed to create volume: %v\n", err)
+								continue
+							}
+							
+							// Migrate directory to volume
+							if err := MigrateDirToVolume(cfg.Name, projectPath, hotDir, volumeName); err != nil {
+								fmt.Fprintf(os.Stderr, "Warning: Migration failed: %v\n", err)
+								continue
+							}
+							
+							// Track migration
+							backupPath := fmt.Sprintf("%s.silibox-backup-%d", hostPath, time.Now().Unix())
+							migratedDirs[hotDir] = filepath.Base(backupPath)
+							volumes[hotDir] = volumeName
+							continue
+						} else {
+							fmt.Printf("Skipping migration for %s\n", hotDir)
+							continue // Don't create volume, use host directory
+						}
+					} else {
+						// NoMigrate flag set - skip
+						continue
+					}
 				}
-				
-				fmt.Printf("Created volume %s for %s\n", volumeName, hotDir)
-				volumes[hotDir] = volumeName
+				// Directory doesn't exist on host - don't create volume pre-emptively
+				// This avoids mount conflicts. The directory will be created on the host
+				// when needed (e.g., npm install creates node_modules)
 			}
 		}
 	}
@@ -113,7 +150,7 @@ func Create(cfg CreateConfig) error {
 					RW:    true,
 				},
 			},
-			Ports: make(map[string]int),
+			Ports:         make(map[string]int),
 			User: state.UserInfo{
 				UID:  uid,
 				GID:  gid,
@@ -123,6 +160,7 @@ func Create(cfg CreateConfig) error {
 			Persistent:    false,
 			LastActive:    time.Now(),
 			ExportedShims: make([]string, 0),
+			MigratedDirs:  migratedDirs,
 		}
 
 		// Update state
