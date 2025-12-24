@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/coheez/silibox/internal/container"
 	"github.com/coheez/silibox/internal/lima"
 	"github.com/coheez/silibox/internal/state"
 	"github.com/spf13/cobra"
@@ -44,6 +45,11 @@ var doctorCmd = &cobra.Command{
 		// Check state consistency
 		if err := checkStateConsistency(); err != nil {
 			warnings = append(warnings, err.Error())
+		}
+
+		// Check for orphaned or desynced containers
+		if desyncWarnings := checkContainerDesync(); len(desyncWarnings) > 0 {
+			warnings = append(warnings, desyncWarnings...)
 		}
 
 		// Check Apple Silicon specific requirements
@@ -173,4 +179,64 @@ func checkStateConsistency() error {
 
 	fmt.Println("✓ State is consistent with lima")
 	return nil
+}
+
+func checkContainerDesync() []string {
+	warnings := []string{}
+
+	// Only check if VM is running
+	inst, found, err := lima.GetInstance()
+	if err != nil || !found || inst.Status != "Running" {
+		return warnings // Skip check if VM not running
+	}
+
+	// Load state
+	s, err := state.Load()
+	if err != nil {
+		return warnings // Can't check without state
+	}
+
+	// Get all environments from state
+	envs := s.ListEnvs()
+	if len(envs) == 0 {
+		fmt.Println("✓ No environments to check")
+		return warnings
+	}
+
+	// Get all running containers from Podman
+	runningContainers, err := container.List()
+	if err != nil {
+		warnings = append(warnings, fmt.Sprintf("failed to list containers: %v", err))
+		return warnings
+	}
+
+	// Create map for quick lookup
+	runningMap := make(map[string]bool)
+	for _, name := range runningContainers {
+		runningMap[name] = true
+	}
+
+	// Check each environment for desync
+	desyncCount := 0
+	for _, env := range envs {
+		isRunning := runningMap[env.Name]
+
+		// Case 1: State says running but container doesn't exist or is stopped
+		if env.Status == "running" && !isRunning {
+			warnings = append(warnings, fmt.Sprintf("Environment '%s' marked as running in state but not found in Podman - run 'sili ls' to see status", env.Name))
+			desyncCount++
+		}
+
+		// Case 2: Container is running but state says stopped (less critical)
+		if env.Status == "stopped" && isRunning {
+			warnings = append(warnings, fmt.Sprintf("Environment '%s' is running but marked as stopped in state - state will be updated on next operation", env.Name))
+			desyncCount++
+		}
+	}
+
+	if desyncCount == 0 {
+		fmt.Printf("✓ All %d environment(s) in sync with Podman\n", len(envs))
+	}
+
+	return warnings
 }

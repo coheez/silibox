@@ -181,9 +181,18 @@ func Stop(name string) error {
 
 		// Stop the container
 		cmd := exec.Command("limactl", "shell", lima.Instance, "--", "podman", "stop", name)
+		var stderr bytes.Buffer
 		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		cmd.Stderr = &stderr
 		if err := cmd.Run(); err != nil {
+			// Check if container doesn't exist (desync)
+			if strings.Contains(stderr.String(), "no such container") {
+				// Container doesn't exist but is in state - update state as stopped
+				fmt.Fprintf(os.Stderr, "Warning: container %s not found in Podman, updating state\n", name)
+				s.UpdateEnvStatus(name, "stopped")
+				s.TouchVMActivity()
+				return nil
+			}
 			return fmt.Errorf("failed to stop container: %w", err)
 		}
 
@@ -257,6 +266,17 @@ type RunResult struct {
 
 // Run executes a command in a named container non-interactively and returns the result
 func Run(name string, command []string) (RunResult, error) {
+	// Check if environment exists in state
+	st, err := state.Load()
+	if err != nil {
+		return RunResult{}, fmt.Errorf("failed to load state: %w", err)
+	}
+
+	env := st.GetEnv(name)
+	if env == nil {
+		return RunResult{}, fmt.Errorf("environment %s not found. Create it with 'sili create --name %s'", name, name)
+	}
+
 	// Check if container exists and is running
 	running, err := isContainerRunning(name)
 	if err != nil {
@@ -264,7 +284,10 @@ func Run(name string, command []string) (RunResult, error) {
 	}
 
 	if !running {
-		return RunResult{}, fmt.Errorf("container %s not found or not running", name)
+		if env.Status == "stopped" {
+			return RunResult{}, fmt.Errorf("container %s is stopped. Start it first (it will auto-start on 'sili enter')", name)
+		}
+		return RunResult{}, fmt.Errorf("container %s not found or not running. It may have been manually deleted - recreate it with 'sili create'", name)
 	}
 
 	args := append([]string{"shell", lima.Instance, "--", "podman", "exec", name}, command...)
@@ -295,6 +318,17 @@ func Run(name string, command []string) (RunResult, error) {
 
 // Enter starts an interactive shell in a named container
 func Enter(name string, shell string) error {
+	// Check if environment exists in state
+	st, err := state.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load state: %w", err)
+	}
+
+	env := st.GetEnv(name)
+	if env == nil {
+		return fmt.Errorf("environment %s not found. Create it with 'sili create --name %s'", name, name)
+	}
+
 	// Check if container exists and is running
 	running, err := isContainerRunning(name)
 	if err != nil {
@@ -302,7 +336,10 @@ func Enter(name string, shell string) error {
 	}
 
 	if !running {
-		return fmt.Errorf("container %s not found or not running", name)
+		if env.Status == "stopped" {
+			return fmt.Errorf("container %s is stopped. Start it with 'podman start' or recreate it with 'sili rm --name %s && sili create --name %s --image %s'", name, name, name, env.Image)
+		}
+		return fmt.Errorf("container %s not found. It may have been manually deleted - recreate it with 'sili create --name %s --image %s'", name, name, env.Image)
 	}
 
 	// Use the specified shell or default to bash
