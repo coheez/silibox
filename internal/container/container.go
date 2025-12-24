@@ -195,12 +195,47 @@ func Stop(name string) error {
 	})
 }
 
-// Remove removes a named container
-func Remove(name string) error {
-	cmd := exec.Command("limactl", "shell", lima.Instance, "--", "podman", "rm", name)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+// Remove removes a named container and cleans up state
+func Remove(name string, force bool) error {
+	return state.WithLockedState(func(s *state.State) error {
+		// Check if environment exists in state
+		env := s.GetEnv(name)
+		if env == nil {
+			return fmt.Errorf("environment %s not found in state", name)
+		}
+
+		// Build podman rm command
+		args := []string{"shell", lima.Instance, "--", "podman", "rm"}
+		if force {
+			args = append(args, "-f") // Force remove even if running
+		}
+		args = append(args, name)
+
+		// Remove the container
+		cmd := exec.Command("limactl", args...)
+		var stderr bytes.Buffer
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			stderrStr := stderr.String()
+			// Check if the error is because container doesn't exist
+			if strings.Contains(stderrStr, "no such container") {
+				// Container doesn't exist in Podman but is in state - clean up state
+				fmt.Fprintf(os.Stderr, "Warning: container %s not found in Podman, cleaning up state\n", name)
+			} else if strings.Contains(stderrStr, "cannot be removed without force") {
+				// Container is running and force flag not used
+				return fmt.Errorf("container %s is running. Stop it first with 'sili stop --name %s' or use --force (-f) to remove it", name, name)
+			} else {
+				return fmt.Errorf("failed to remove container: %w", err)
+			}
+		}
+
+		// Remove from state (this also releases ports)
+		s.RemoveEnv(name)
+		s.TouchVMActivity()
+
+		return nil
+	})
 }
 
 // Exec runs a command in a named container
