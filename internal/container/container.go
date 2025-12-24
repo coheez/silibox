@@ -170,12 +170,29 @@ func List() ([]string, error) {
 	return names, nil
 }
 
-// Stop stops a named container
+// Stop stops a named container and updates state
 func Stop(name string) error {
-	cmd := exec.Command("limactl", "shell", lima.Instance, "--", "podman", "stop", name)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return state.WithLockedState(func(s *state.State) error {
+		// Check if environment exists in state
+		env := s.GetEnv(name)
+		if env == nil {
+			return fmt.Errorf("environment %s not found in state", name)
+		}
+
+		// Stop the container
+		cmd := exec.Command("limactl", "shell", lima.Instance, "--", "podman", "stop", name)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to stop container: %w", err)
+		}
+
+		// Update state
+		s.UpdateEnvStatus(name, "stopped")
+		s.TouchVMActivity()
+
+		return nil
+	})
 }
 
 // Remove removes a named container

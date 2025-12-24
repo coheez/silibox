@@ -21,6 +21,7 @@ var (
 	enterName   string
 	enterShell  string
 	runName     string
+	stopName    string
 )
 
 var createCmd = &cobra.Command{
@@ -142,6 +143,18 @@ var lsCmd = &cobra.Command{
 	},
 }
 
+var stopCmd = &cobra.Command{
+	Use:   "stop",
+	Short: "Stop a running container",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := container.Stop(stopName); err != nil {
+			return err
+		}
+		fmt.Printf("Stopped environment: %s\n", stopName)
+		return nil
+	},
+}
+
 // formatRelativeTime formats a time as a relative string (e.g., "2 hours ago")
 func formatRelativeTime(t time.Time) string {
 	if t.IsZero() {
@@ -184,7 +197,7 @@ func formatRelativeTime(t time.Time) string {
 }
 
 func init() {
-	rootCmd.AddCommand(createCmd, enterCmd, runCmd, lsCmd)
+	rootCmd.AddCommand(createCmd, enterCmd, runCmd, lsCmd, stopCmd)
 	createCmd.Flags().StringVarP(&createName, "name", "n", "silibox-dev", "Container name")
 	createCmd.Flags().StringVarP(&createImage, "image", "i", "ubuntu:22.04", "Container image")
 	createCmd.Flags().StringVarP(&createDir, "dir", "d", ".", "Project directory to bind mount")
@@ -193,4 +206,5 @@ func init() {
 	enterCmd.Flags().StringVarP(&enterName, "name", "n", "silibox-dev", "Container name to enter")
 	enterCmd.Flags().StringVarP(&enterShell, "shell", "s", "bash", "Shell to use (bash, sh, zsh, etc.)")
 	runCmd.Flags().StringVarP(&runName, "name", "n", "silibox-dev", "Container name to run command in")
+	stopCmd.Flags().StringVarP(&stopName, "name", "n", "silibox-dev", "Container name to stop")
 }
