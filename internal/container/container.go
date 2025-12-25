@@ -23,8 +23,9 @@ type CreateConfig struct {
 	WorkingDir              string
 	User                    string
 	Environment             map[string]string
-	DetectAndPrepareVolumes bool // Auto-detect project stack and create volumes for hot dirs
-	NoMigrate               bool // Skip migration prompts for existing directories
+	Ports                   []string // Port specs like "3000" or "8080:80" or "8080:80/tcp"
+	DetectAndPrepareVolumes bool     // Auto-detect project stack and create volumes for hot dirs
+	NoMigrate               bool     // Skip migration prompts for existing directories
 }
 
 // Create pulls the image and starts a named Podman container with proper bind mounts and UID/GID mapping
@@ -42,11 +43,24 @@ func Create(cfg CreateConfig) error {
 			return fmt.Errorf("failed to get user IDs: %w", err)
 		}
 
-	// Get absolute project path
-	projectPath, err := filepath.Abs(cfg.ProjectDir)
-	if err != nil {
-		return fmt.Errorf("failed to get absolute project path: %w", err)
-	}
+		// Get absolute project path
+		projectPath, err := filepath.Abs(cfg.ProjectDir)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute project path: %w", err)
+		}
+
+		// Parse and validate port mappings
+		portMappings, err := ParsePortSpecs(cfg.Ports)
+		if err != nil {
+			return fmt.Errorf("invalid port specification: %w", err)
+		}
+
+		// Check for port conflicts
+		for _, pm := range portMappings {
+			if inUse, envName := s.IsPortInUse(pm.HostPort); inUse {
+				return fmt.Errorf("port %d is already in use by environment %s", pm.HostPort, envName)
+			}
+		}
 
 	// Detect project stack and prepare volumes if requested
 	volumes := make(map[string]string)
@@ -125,15 +139,15 @@ func Create(cfg CreateConfig) error {
 		}
 	}
 
-	// Pull the image
-	if err := pullImage(cfg.Image); err != nil {
-		return fmt.Errorf("failed to pull image %s: %w", cfg.Image, err)
-	}
+		// Pull the image
+		if err := pullImage(cfg.Image); err != nil {
+			return fmt.Errorf("failed to pull image %s: %w", cfg.Image, err)
+		}
 
-	// Create the container with volumes
-	if err := createContainer(cfg, uid, gid, volumes); err != nil {
-		return err
-	}
+		// Create the container with volumes and ports
+		if err := createContainer(cfg, uid, gid, volumes, portMappings); err != nil {
+			return err
+		}
 
 	// Create environment info
 	envInfo := &state.EnvInfo{
@@ -147,11 +161,11 @@ func Create(cfg CreateConfig) error {
 				"work": {
 					Host:  projectPath,
 					Guest: cfg.WorkingDir,
-					RW:    true,
-				},
+				RW:    true,
 			},
-			Ports:         make(map[string]int),
-			User: state.UserInfo{
+		},
+		Ports:         portMappings,
+		User: state.UserInfo{
 				UID:  uid,
 				GID:  gid,
 				Name: cfg.User,
@@ -197,7 +211,7 @@ func pullImage(image string) error {
 	return cmd.Run()
 }
 
-func createContainer(cfg CreateConfig, uid, gid int, volumes map[string]string) error {
+func createContainer(cfg CreateConfig, uid, gid int, volumes map[string]string, portMappings []state.PortMapping) error {
 	// Get absolute paths
 	projectDir, err := filepath.Abs(cfg.ProjectDir)
 	if err != nil {
@@ -232,6 +246,15 @@ func createContainer(cfg CreateConfig, uid, gid int, volumes map[string]string) 
 	args = append(args, "-v", fmt.Sprintf("%s:/workspace", projectDir)) // project dir (writable)
 	args = append(args, "-v", fmt.Sprintf("%s:/home/host:ro", homeDir)) // home dir (read-only)
 	args = append(args, "-w", cfg.WorkingDir)
+
+	// Add port mappings
+	for _, pm := range portMappings {
+		portSpec := fmt.Sprintf("%d:%d", pm.HostPort, pm.ContainerPort)
+		if pm.Protocol == "udp" {
+			portSpec += "/udp"
+		}
+		args = append(args, "-p", portSpec)
+	}
 
 	// Add environment variables
 	for key, value := range cfg.Environment {

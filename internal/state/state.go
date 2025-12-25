@@ -17,7 +17,7 @@ const (
 	StateDir      = ".sili"
 	StateFile     = "state.json"
 	LockFile      = "state.lock"
-	SchemaVersion = 2 // Incremented for MigratedDirs field
+	SchemaVersion = 3 // Incremented for PortMapping type
 )
 
 type State struct {
@@ -57,7 +57,7 @@ type EnvInfo struct {
 	ContainerID   string            `json:"container_id"`
 	Volumes       map[string]string `json:"volumes"`
 	Mounts        map[string]Mount  `json:"mounts"`
-	Ports         map[string]int    `json:"ports"`
+	Ports         []PortMapping     `json:"ports,omitempty"`
 	User          UserInfo          `json:"user"`
 	Status        string            `json:"status"`
 	Persistent    bool              `json:"persistent"`
@@ -70,6 +70,12 @@ type Mount struct {
 	Host  string `json:"host"`
 	Guest string `json:"guest"`
 	RW    bool   `json:"rw"`
+}
+
+type PortMapping struct {
+	HostPort      int    `json:"host_port"`
+	ContainerPort int    `json:"container_port"`
+	Protocol      string `json:"protocol"` // "tcp" or "udp"
 }
 
 type UserInfo struct {
@@ -334,6 +340,19 @@ func (s *State) ReleasePorts(name string) {
 	delete(s.Ports.Reserved, name)
 }
 
+// IsPortInUse checks if a host port is already in use by any environment
+// Returns true and the environment name if in use, false and empty string otherwise
+func (s *State) IsPortInUse(hostPort int) (bool, string) {
+	for envName, env := range s.Envs {
+		for _, pm := range env.Ports {
+			if pm.HostPort == hostPort {
+				return true, envName
+			}
+		}
+	}
+	return false, ""
+}
+
 // Shim management
 func (s *State) RegisterShim(alias, env, targetPath string) {
 	s.Shims[alias] = &ShimInfo{
@@ -370,6 +389,13 @@ func migrate(state *State, from, to int) error {
 				env.MigratedDirs = make(map[string]string)
 			}
 		}
+	}
+
+	// Migrate from v2 to v3: convert Ports from map[string]int to []PortMapping
+	// Old state files will have nil Ports field which is fine
+	if from < 3 && to >= 3 {
+		// No-op: old ports field was map[string]int which we don't use
+		// New empty environments will get []PortMapping initialized
 	}
 	
 	state.Schema = to

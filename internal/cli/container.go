@@ -18,6 +18,7 @@ var (
 	createDir           string
 	createWork          string
 	createUser          string
+	createPorts         []string
 	createDetectVolumes bool
 	createNoMigrate     bool
 	enterName           string
@@ -47,6 +48,7 @@ var createCmd = &cobra.Command{
 			WorkingDir:              createWork,
 			User:                    createUser,
 			Environment:             env,
+			Ports:                   createPorts,
 			DetectAndPrepareVolumes: createDetectVolumes,
 			NoMigrate:               createNoMigrate,
 		}
@@ -221,6 +223,7 @@ func init() {
 	createCmd.Flags().StringVarP(&createDir, "dir", "d", ".", "Project directory to bind mount")
 	createCmd.Flags().StringVarP(&createWork, "workdir", "w", "/workspace", "Working directory inside container")
 	createCmd.Flags().StringVarP(&createUser, "user", "u", "", "User to run as (default: current user)")
+	createCmd.Flags().StringArrayVarP(&createPorts, "ports", "p", []string{}, "Port mappings (format: 3000 or 8080:80 or 8080:80/tcp)")
 	createCmd.Flags().BoolVar(&createDetectVolumes, "detect-volumes", false, "[Experimental] Enable automatic project stack detection and volume creation")
 	createCmd.Flags().BoolVar(&createNoMigrate, "no-migrate", false, "Skip migration prompts for existing directories when using --detect-volumes")
 	enterCmd.Flags().StringVarP(&enterName, "name", "n", "silibox-dev", "Container name to enter")
