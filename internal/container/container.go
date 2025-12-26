@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/coheez/silibox/internal/lima"
+	"github.com/coheez/silibox/internal/shim"
 	"github.com/coheez/silibox/internal/stack"
 	"github.com/coheez/silibox/internal/state"
 )
@@ -354,6 +355,16 @@ func Remove(name string, force bool) error {
 			} else {
 				return fmt.Errorf("failed to remove container: %w", err)
 			}
+		}
+
+		// Clean up shims for this environment
+		for _, shimName := range env.ExportedShims {
+			if err := shim.RemoveShim(shimName); err != nil {
+				// Don't fail if shim removal fails, just warn
+				fmt.Fprintf(os.Stderr, "Warning: failed to remove shim %s: %v\n", shimName, err)
+			}
+			// Unregister from global shim map
+			s.UnregisterShim(shimName)
 		}
 
 		// Remove from state (this also releases ports)
