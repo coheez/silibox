@@ -385,6 +385,12 @@ func Exec(name string, command []string) error {
 	return cmd.Run()
 }
 
+// RunOptions configures command execution behavior
+type RunOptions struct {
+	EnablePolling bool // Auto-detect and enable polling for file watchers
+	ForcePolling  bool // Force polling mode even if not detected as watcher
+}
+
 // RunResult contains the result of a non-interactive command execution
 type RunResult struct {
 	ExitCode int
@@ -393,7 +399,13 @@ type RunResult struct {
 }
 
 // Run executes a command in a named container non-interactively and returns the result
+// Uses default options (polling detection enabled)
 func Run(name string, command []string) (RunResult, error) {
+	return RunWithOptions(name, command, RunOptions{EnablePolling: true})
+}
+
+// RunWithOptions executes a command with custom options
+func RunWithOptions(name string, command []string, opts RunOptions) (RunResult, error) {
 	// Check if environment exists in state
 	st, err := state.Load()
 	if err != nil {
@@ -418,7 +430,35 @@ func Run(name string, command []string) (RunResult, error) {
 		return RunResult{}, fmt.Errorf("container %s not found or not running. It may have been manually deleted - recreate it with 'sili create'", name)
 	}
 
-	args := append([]string{"shell", lima.Instance, "--", "podman", "exec", name}, command...)
+	// Build base args
+	args := []string{"shell", lima.Instance, "--", "podman", "exec"}
+
+	// Detect watcher and inject polling env vars if enabled
+	if opts.EnablePolling || opts.ForcePolling {
+		watcher := stack.DetectWatcher(command, env.ProjectPath)
+		if opts.ForcePolling || watcher != nil {
+			envVars := make(map[string]string)
+			if watcher != nil {
+				envVars = watcher.EnvVars
+				fmt.Fprintf(os.Stderr, "⚡ Detected watcher command, enabling polling mode\n")
+			} else if opts.ForcePolling {
+				// Force polling with generic env vars
+				envVars = map[string]string{
+					"CHOKIDAR_USEPOLLING": "true",
+					"WATCHPACK_POLLING":   "true",
+				}
+				fmt.Fprintf(os.Stderr, "⚡ Forcing polling mode\n")
+			}
+
+			// Inject environment variables
+			for key, value := range envVars {
+				args = append(args, "-e", fmt.Sprintf("%s=%s", key, value))
+			}
+		}
+	}
+
+	args = append(args, name)
+	args = append(args, command...)
 	cmd := exec.Command("limactl", args...)
 
 	// Capture stdout and stderr

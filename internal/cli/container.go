@@ -24,6 +24,8 @@ var (
 	enterName           string
 	enterShell          string
 	runName             string
+	runNoPolling        bool
+	runForcePolling     bool
 	stopName            string
 	rmName              string
 	rmForce             bool
@@ -72,7 +74,12 @@ var runCmd = &cobra.Command{
 			return fmt.Errorf("no command specified")
 		}
 
-		result, err := container.Run(runName, args)
+		runOpts := container.RunOptions{
+			EnablePolling: !runNoPolling, // Enabled by default unless --no-polling
+			ForcePolling:  runForcePolling,
+		}
+
+		result, err := container.RunWithOptions(runName, args, runOpts)
 		if err != nil {
 			return err
 		}
@@ -229,6 +236,8 @@ func init() {
 	enterCmd.Flags().StringVarP(&enterName, "name", "n", "silibox-dev", "Container name to enter")
 	enterCmd.Flags().StringVarP(&enterShell, "shell", "s", "bash", "Shell to use (bash, sh, zsh, etc.)")
 	runCmd.Flags().StringVarP(&runName, "name", "n", "silibox-dev", "Container name to run command in")
+	runCmd.Flags().BoolVar(&runNoPolling, "no-polling", false, "Disable automatic polling mode for file watchers")
+	runCmd.Flags().BoolVar(&runForcePolling, "force-polling", false, "Force polling mode even if not detected as watcher")
 	stopCmd.Flags().StringVarP(&stopName, "name", "n", "silibox-dev", "Container name to stop")
 	rmCmd.Flags().StringVarP(&rmName, "name", "n", "silibox-dev", "Container name to remove")
 	rmCmd.Flags().BoolVarP(&rmForce, "force", "f", false, "Force remove even if running")

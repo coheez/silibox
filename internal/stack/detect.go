@@ -35,13 +35,20 @@ func (s StackType) String() string {
 	}
 }
 
+// WatcherInfo describes a file watcher command and its polling configuration
+type WatcherInfo struct {
+	Command string            // Command pattern to match (e.g., "vite", "npm run dev")
+	EnvVars map[string]string // Environment variables needed for polling
+}
+
 // ProjectInfo contains information about a detected project
 type ProjectInfo struct {
 	Type            StackType         // Primary stack type
 	Types           []StackType       // All detected stack types (for mixed projects)
 	HotDirs         []string          // Directories to move into volumes for performance
 	ConfigFiles     map[string]bool   // Detected configuration files
-	WatcherCommands []string          // Known watcher commands for this stack
+	WatcherCommands []string          // Known watcher commands for this stack (deprecated, use Watchers)
+	Watchers        []WatcherInfo     // File watchers with polling configuration
 	PackageManager  string            // Detected package manager (npm, yarn, pnpm, bun, etc.)
 }
 
@@ -58,11 +65,12 @@ func DetectStack(projectPath string) (*ProjectInfo, error) {
 
 	// Initialize project info
 	projectInfo := &ProjectInfo{
-		Type:        Unknown,
-		Types:       make([]StackType, 0),
-		HotDirs:     make([]string, 0),
-		ConfigFiles: make(map[string]bool),
+		Type:            Unknown,
+		Types:           make([]StackType, 0),
+		HotDirs:         make([]string, 0),
+		ConfigFiles:     make(map[string]bool),
 		WatcherCommands: make([]string, 0),
+		Watchers:        make([]WatcherInfo, 0),
 	}
 
 	// Detect each stack type
@@ -72,6 +80,7 @@ func DetectStack(projectPath string) (*ProjectInfo, error) {
 		detectedTypes = append(detectedTypes, Node)
 		projectInfo.HotDirs = append(projectInfo.HotDirs, nodeInfo.HotDirs...)
 		projectInfo.WatcherCommands = append(projectInfo.WatcherCommands, nodeInfo.WatcherCommands...)
+		projectInfo.Watchers = append(projectInfo.Watchers, nodeInfo.Watchers...)
 		projectInfo.PackageManager = nodeInfo.PackageManager
 		for k, v := range nodeInfo.ConfigFiles {
 			projectInfo.ConfigFiles[k] = v
@@ -82,6 +91,7 @@ func DetectStack(projectPath string) (*ProjectInfo, error) {
 		detectedTypes = append(detectedTypes, Python)
 		projectInfo.HotDirs = append(projectInfo.HotDirs, pythonInfo.HotDirs...)
 		projectInfo.WatcherCommands = append(projectInfo.WatcherCommands, pythonInfo.WatcherCommands...)
+		projectInfo.Watchers = append(projectInfo.Watchers, pythonInfo.Watchers...)
 		for k, v := range pythonInfo.ConfigFiles {
 			projectInfo.ConfigFiles[k] = v
 		}
@@ -91,6 +101,7 @@ func DetectStack(projectPath string) (*ProjectInfo, error) {
 		detectedTypes = append(detectedTypes, Rust)
 		projectInfo.HotDirs = append(projectInfo.HotDirs, rustInfo.HotDirs...)
 		projectInfo.WatcherCommands = append(projectInfo.WatcherCommands, rustInfo.WatcherCommands...)
+		projectInfo.Watchers = append(projectInfo.Watchers, rustInfo.Watchers...)
 		for k, v := range rustInfo.ConfigFiles {
 			projectInfo.ConfigFiles[k] = v
 		}
@@ -100,6 +111,7 @@ func DetectStack(projectPath string) (*ProjectInfo, error) {
 		detectedTypes = append(detectedTypes, Go)
 		projectInfo.HotDirs = append(projectInfo.HotDirs, goInfo.HotDirs...)
 		projectInfo.WatcherCommands = append(projectInfo.WatcherCommands, goInfo.WatcherCommands...)
+		projectInfo.Watchers = append(projectInfo.Watchers, goInfo.Watchers...)
 		for k, v := range goInfo.ConfigFiles {
 			projectInfo.ConfigFiles[k] = v
 		}
@@ -151,6 +163,12 @@ func detectNode(projectPath string) *ProjectInfo {
 		packageManager = "yarn"
 	}
 
+	// Common Node.js watcher env vars for polling
+	pollingEnvVars := map[string]string{
+		"CHOKIDAR_USEPOLLING": "true",
+		"WATCHPACK_POLLING":   "true",
+	}
+
 	return &ProjectInfo{
 		Type:        Node,
 		ConfigFiles: configFiles,
@@ -181,6 +199,24 @@ func detectNode(projectPath string) *ProjectInfo {
 			"nodemon",
 			"ts-node-dev",
 		},
+		Watchers: []WatcherInfo{
+			{Command: "npm run dev", EnvVars: pollingEnvVars},
+			{Command: "npm start", EnvVars: pollingEnvVars},
+			{Command: "npm run start", EnvVars: pollingEnvVars},
+			{Command: "yarn dev", EnvVars: pollingEnvVars},
+			{Command: "yarn start", EnvVars: pollingEnvVars},
+			{Command: "pnpm dev", EnvVars: pollingEnvVars},
+			{Command: "pnpm start", EnvVars: pollingEnvVars},
+			{Command: "bun dev", EnvVars: pollingEnvVars},
+			{Command: "bun run dev", EnvVars: pollingEnvVars},
+			{Command: "next dev", EnvVars: pollingEnvVars},
+			{Command: "vite", EnvVars: pollingEnvVars},
+			{Command: "vite dev", EnvVars: pollingEnvVars},
+			{Command: "webpack serve", EnvVars: pollingEnvVars},
+			{Command: "webpack-dev-server", EnvVars: pollingEnvVars},
+			{Command: "nodemon", EnvVars: pollingEnvVars},
+			{Command: "ts-node-dev", EnvVars: pollingEnvVars},
+		},
 		PackageManager: packageManager,
 	}
 }
@@ -209,6 +245,11 @@ func detectPython(projectPath string) *ProjectInfo {
 		return nil
 	}
 
+	// Python watcher env vars (most Python watchers use polling by default or have --poll flag)
+	pollingEnvVars := map[string]string{
+		"WATCHDOG_FORCE_POLLING": "true",
+	}
+
 	return &ProjectInfo{
 		Type:        Python,
 		ConfigFiles: configFiles,
@@ -235,6 +276,13 @@ func detectPython(projectPath string) *ProjectInfo {
 			"uvicorn --reload",
 			"fastapi dev",
 		},
+		Watchers: []WatcherInfo{
+			{Command: "flask run", EnvVars: pollingEnvVars},
+			{Command: "flask run --reload", EnvVars: pollingEnvVars},
+			{Command: "uvicorn --reload", EnvVars: pollingEnvVars},
+			{Command: "fastapi dev", EnvVars: pollingEnvVars},
+			{Command: "watchdog", EnvVars: pollingEnvVars},
+		},
 	}
 }
 
@@ -258,6 +306,11 @@ func detectRust(projectPath string) *ProjectInfo {
 		return nil
 	}
 
+	// Rust watcher env vars (cargo watch uses notify which may need polling)
+	pollingEnvVars := map[string]string{
+		"CARGO_WATCH_POLL": "1",
+	}
+
 	return &ProjectInfo{
 		Type:        Rust,
 		ConfigFiles: configFiles,
@@ -271,6 +324,9 @@ func detectRust(projectPath string) *ProjectInfo {
 			"cargo watch -x run",
 			"cargo watch -x test",
 			"cargo run --watch",
+		},
+		Watchers: []WatcherInfo{
+			{Command: "cargo watch", EnvVars: pollingEnvVars},
 		},
 	}
 }
@@ -301,6 +357,11 @@ func detectGo(projectPath string) *ProjectInfo {
 		hotDirs = append(hotDirs, "vendor")
 	}
 
+	// Go watcher env vars (most Go watchers handle polling internally)
+	pollingEnvVars := map[string]string{
+		"POLLING": "true",
+	}
+
 	return &ProjectInfo{
 		Type:        Go,
 		ConfigFiles: configFiles,
@@ -311,6 +372,10 @@ func detectGo(projectPath string) *ProjectInfo {
 			"realize start",
 			"gow run",
 			"reflex",
+		},
+		Watchers: []WatcherInfo{
+			{Command: "air", EnvVars: pollingEnvVars},
+			{Command: "gow run", EnvVars: pollingEnvVars},
 		},
 	}
 }
