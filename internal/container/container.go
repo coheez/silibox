@@ -430,6 +430,16 @@ func RunWithOptions(name string, command []string, opts RunOptions) (RunResult, 
 		return RunResult{}, fmt.Errorf("container %s not found or not running. It may have been manually deleted - recreate it with 'sili create'", name)
 	}
 
+	// Touch activity timestamp before executing
+	if err := state.WithLockedState(func(s *state.State) error {
+		s.TouchEnvActivity(name)
+		s.TouchVMActivity()
+		return nil
+	}); err != nil {
+		// Don't fail command if timestamp update fails, just log
+		fmt.Fprintf(os.Stderr, "Warning: failed to update activity timestamp: %v\n", err)
+	}
+
 	// Build base args
 	args := []string{"shell", lima.Instance, "--", "podman", "exec"}
 
@@ -508,6 +518,16 @@ func Enter(name string, shell string) error {
 			return fmt.Errorf("container %s is stopped. Start it with 'podman start' or recreate it with 'sili rm --name %s && sili create --name %s --image %s'", name, name, name, env.Image)
 		}
 		return fmt.Errorf("container %s not found. It may have been manually deleted - recreate it with 'sili create --name %s --image %s'", name, name, env.Image)
+	}
+
+	// Touch activity timestamp before entering shell
+	if err := state.WithLockedState(func(s *state.State) error {
+		s.TouchEnvActivity(name)
+		s.TouchVMActivity()
+		return nil
+	}); err != nil {
+		// Don't fail command if timestamp update fails, just log
+		fmt.Fprintf(os.Stderr, "Warning: failed to update activity timestamp: %v\n", err)
 	}
 
 	// Use the specified shell or default to bash

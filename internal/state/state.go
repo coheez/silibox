@@ -101,12 +101,22 @@ var (
 )
 
 func init() {
+	initializePaths()
+}
+
+func initializePaths() {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		panic(fmt.Sprintf("failed to get home directory: %v", err))
 	}
 	statePath = filepath.Join(homeDir, StateDir, StateFile)
 	lockPath = filepath.Join(homeDir, StateDir, LockFile)
+}
+
+// ResetForTesting reinitializes state paths - ONLY for testing
+func ResetForTesting() {
+	initOnce = sync.Once{}
+	initializePaths()
 }
 
 // WithLockedState executes a function with exclusive access to the state
