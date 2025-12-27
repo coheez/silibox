@@ -7,10 +7,15 @@ This document provides detailed information for developers working on Silibox.
 ### Core Components
 
 - **CLI Layer** (`internal/cli/`) - Cobra-based command interface
+- **Agent** (`internal/agent/`) - Autosleep agent and idle detection
+- **Config** (`internal/config/`) - Configuration file management
 - **Lima Integration** (`internal/lima/`) - VM lifecycle management
 - **Container Management** (`internal/container/`) - Podman operations
 - **State Store** (`internal/state/`) - Persistent state management
+- **VM Utilities** (`internal/vm/`) - VM helper functions (auto-wake)
 - **Runtime Probes** (`internal/runtime/`) - Environment validation
+- **Shim** (`internal/shim/`) - Binary shim generation
+- **Stack** (`internal/stack/`) - Stack management
 
 ### State Management
 
@@ -75,8 +80,11 @@ make test-coverage
 Commands are organized by functionality:
 
 - **Root commands**: `version`, `doctor`, `state`
-- **VM commands**: `vm up`, `vm status`, `vm stop`, `vm probe`
-- **Container commands**: `create`, `enter`, `run`
+- **VM commands**: `vm up`, `vm status`, `vm stop`, `vm sleep`, `vm wake`, `vm probe`
+- **Container commands**: `create`, `enter`, `run`, `stop`, `rm`, `ls`
+- **Agent commands**: `agent autosleep`
+- **Export commands**: `export-bin`
+- **Stack commands**: `stack create`, `stack up`, `stack down`, `stack rm`
 
 ### State Operations
 

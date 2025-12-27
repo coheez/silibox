@@ -69,6 +69,9 @@ This creates and starts a Lima VM with:
   --image ubuntu:22.04 \
   --dir /path/to/project \
   --workdir /workspace
+
+# Create persistent service (won't auto-sleep)
+./bin/sili create --name postgres --image postgres:15 --persistent
 ```
 
 This creates a Podman container with:
@@ -76,6 +79,7 @@ This creates a Podman container with:
 - Your home directory mounted read-only at `/home/host`
 - UID/GID mapping for seamless file permissions
 - Environment variables from your host
+- Optional `--persistent` flag to prevent auto-sleep
 
 ### 4. Enter Your Environment
 
@@ -111,6 +115,10 @@ This creates a Podman container with:
 # Stop VM
 ./bin/sili vm stop
 
+# Power management (user-friendly aliases)
+./bin/sili vm sleep           # Put VM to sleep
+./bin/sili vm wake            # Wake VM
+
 # Test runtime (hello-world container)
 ./bin/sili vm probe
 ```
@@ -121,15 +129,40 @@ This creates a Podman container with:
 # Create environment
 ./bin/sili create --name my-env --image ubuntu:22.04
 
+# Create persistent service (won't auto-sleep)
+./bin/sili create --name postgres --persistent
+
+# List environments
+./bin/sili ls
+
 # Enter interactive shell
 ./bin/sili enter --name my-env
 
 # Run commands
 ./bin/sili run --name my-env -- command args
 
+# Stop/remove environment
+./bin/sili stop --name my-env
+./bin/sili rm --name my-env
+
 # View state
 ./bin/sili state show
 ```
+
+### Autosleep Agent
+
+```bash
+# Run autosleep agent (auto-stops idle containers and VM)
+./bin/sili agent autosleep
+
+# With custom timeouts
+./bin/sili agent autosleep --container-timeout 10m --vm-timeout 20m
+
+# Don't stop VM, only containers
+./bin/sili agent autosleep --no-stop-vm
+```
+
+📚 **See [docs/AUTOSLEEP.md](docs/AUTOSLEEP.md) for comprehensive autosleep documentation**
 
 ### Diagnostics
 
@@ -137,11 +170,28 @@ This creates a Podman container with:
 # Comprehensive health check
 ./bin/sili doctor
 
+# Auto-repair common issues
+./bin/sili doctor --fix
+
 # Show version info
 ./bin/sili version
 ```
 
 ## 🔧 Configuration
+
+### Config File
+
+Create `~/.sili/config.yaml` to configure autosleep behavior:
+
+```yaml
+autosleep:
+  container_timeout: 15m    # Idle timeout for containers
+  vm_timeout: 30m           # Idle timeout for VM
+  poll_interval: 30s        # How often to check
+  no_stop_vm: false         # Disable VM auto-stop
+```
+
+Command-line flags override config file settings.
 
 ### VM Resources
 
@@ -157,7 +207,8 @@ This creates a Podman container with:
   --image ubuntu:22.04 \
   --dir /path/to/project \
   --workdir /workspace \
-  --user myuser
+  --user myuser \
+  --persistent              # Opt out of autosleep
 ```
 
 ## 📁 Project Structure
@@ -166,11 +217,16 @@ This creates a Podman container with:
 silibox/
 ├── cmd/sili/main.go              # CLI entry point
 ├── internal/
+│   ├── agent/                    # Autosleep agent & idle detection
 │   ├── cli/                      # Cobra commands
-│   ├── lima/                     # VM management
+│   ├── config/                   # Config file management
 │   ├── container/                # Container operations
+│   ├── lima/                     # VM management
 │   ├── runtime/                  # Runtime probes
-│   └── state/                    # State management
+│   ├── shim/                     # Binary shim generation
+│   ├── stack/                    # Stack management
+│   ├── state/                    # State management
+│   └── vm/                       # VM utility functions
 ├── build/lima/templates/         # Lima VM templates
 ├── scripts/dev/                  # Development scripts
 └── Makefile                      # Build system
@@ -238,6 +294,7 @@ Silibox maintains state in `~/.sili/state.json`:
 
 **State inconsistencies:**
 ```bash
+./bin/sili doctor --fix        # Auto-repair state issues
 ./bin/sili vm status --live
 ./bin/sili state show
 ```
@@ -259,12 +316,19 @@ This is an internal alpha release. Features may change and bugs are expected.
 - Container networking is basic
 - No automatic port forwarding yet
 
+**Recent Features (Sprint 4):**
+- ✅ Autosleep agent with idle detection
+- ✅ Auto-wake VM on demand
+- ✅ Persistent services flag
+- ✅ Power management commands (`vm sleep`, `vm wake`)
+- ✅ Config file support (`~/.sili/config.yaml`)
+- ✅ `doctor --fix` auto-repair
+
 **Planned Features:**
 - Port forwarding and service exposure
 - Volume management
-- Shim generation for seamless tool usage
-- Multi-environment support
-- Auto-sleep for resource management
+- Enhanced shim generation
+- Stack management improvements
 
 ## 📄 License
 
