@@ -2,6 +2,7 @@ package lima
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,6 +13,9 @@ import (
 
 	"github.com/coheez/silibox/internal/state"
 )
+
+//go:embed templates/ubuntu-lts.yaml.tmpl
+var embeddedTemplate string
 
 const (
 	Instance = "silibox"
@@ -204,46 +208,18 @@ func ensureTemplate(cfg Config) error {
 	}
 	yamlPath := filepath.Join(dir, "lima.yaml")
 
-	// Allow overriding the template path via environment for tests or customization
-	// Otherwise, try common locations relative to the current working directory
-	// and the repository root (walking up from the current directory).
-	templatePath := os.Getenv("SILI_LIMA_TEMPLATE")
-	if templatePath == "" {
-		candidates := []string{
-			"build/lima/templates/ubuntu-lts.yaml.tmpl",
-			filepath.Clean(filepath.Join("..", "..", "build", "lima", "templates", "ubuntu-lts.yaml.tmpl")),
+	// Use embedded template, but allow override via environment for tests
+	tmplContent := embeddedTemplate
+	if envPath := os.Getenv("SILI_LIMA_TEMPLATE"); envPath != "" {
+		tmplBytes, err := os.ReadFile(envPath)
+		if err != nil {
+			return fmt.Errorf("failed to read custom template: %w", err)
 		}
-		for _, c := range candidates {
-			if _, err := os.Stat(c); err == nil {
-				templatePath = c
-				break
-			}
-		}
-		// As a last resort, walk up a few levels to find the repo root containing build/lima/templates
-		if templatePath == "" {
-			wd, _ := os.Getwd()
-			walk := wd
-			for i := 0; i < 4 && templatePath == ""; i++ {
-				candidate := filepath.Join(walk, "build", "lima", "templates", "ubuntu-lts.yaml.tmpl")
-				if _, err := os.Stat(candidate); err == nil {
-					templatePath = candidate
-					break
-				}
-				walk = filepath.Dir(walk)
-			}
-		}
+		tmplContent = string(tmplBytes)
 	}
 
-	if templatePath == "" {
-		return fmt.Errorf("missing lima template: could not locate template file")
-	}
-
-	tmplBytes, err := os.ReadFile(templatePath)
-	if err != nil {
-		return fmt.Errorf("missing lima template: %w", err)
-	}
 	var buf bytes.Buffer
-	if err := template.Must(template.New("lima").Parse(string(tmplBytes))).Execute(&buf, cfg); err != nil {
+	if err := template.Must(template.New("lima").Parse(tmplContent)).Execute(&buf, cfg); err != nil {
 		return err
 	}
 	return os.WriteFile(yamlPath, buf.Bytes(), 0o644)

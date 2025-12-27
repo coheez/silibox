@@ -25,6 +25,11 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
       
+      - name: Prepare embedded assets
+        run: |
+          mkdir -p internal/lima/templates
+          cp build/lima/templates/ubuntu-lts.yaml.tmpl internal/lima/templates/ubuntu-lts.yaml.tmpl
+      
       - name: Build binaries
         run: |
           # Build for Apple Silicon

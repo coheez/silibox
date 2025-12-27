@@ -1,9 +1,13 @@
 APP=sili
 
-.PHONY: build run test test-unit test-integration test-coverage test-verbose lint install clean
+.PHONY: build run test test-unit test-integration test-coverage test-verbose lint install clean embed-assets
 
-build:
+build: embed-assets
 	go build -ldflags "-X github.com/coheez/silibox/internal/cli.version=$$(git describe --tags --always --dirty) -X github.com/coheez/silibox/internal/cli.commit=$$(git rev-parse --short HEAD) -X github.com/coheez/silibox/internal/cli.buildDate=$$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o bin/$(APP) ./cmd/sili
+
+embed-assets:
+	mkdir -p internal/lima/templates
+	cp build/lima/templates/ubuntu-lts.yaml.tmpl internal/lima/templates/ubuntu-lts.yaml.tmpl
 
 run: build
 	./bin/$(APP)
