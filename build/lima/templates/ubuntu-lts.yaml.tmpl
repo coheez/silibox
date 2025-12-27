@@ -1,8 +1,10 @@
-arch: "aarch64"
+arch: "{{.Arch}}"
 images:
-  - location: "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-arm64.img"
-    arch: "aarch64"
-    digest: "sha256:a40713938d74aaec811f74cb1fa8bfcb535d22e26b2a0ca1cc90ad9db898feb9"
+  - location: "{{.ImageURL}}"
+    arch: "{{.Arch}}"
+{{- if .ImageDigest }}
+    digest: "{{.ImageDigest}}"
+{{- end }}
 vmType: "vz"
 cpus: {{.CPUs}}
 memory: "{{.Memory}}"

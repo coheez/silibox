@@ -245,9 +245,11 @@ func ensureTemplate(cfg Config) error {
 	return os.WriteFile(yamlPath, buf.Bytes(), 0o644)
 }
 
-// resolveUbuntuImage picks the appropriate Ubuntu Noble image URL and best-effort digest for the host arch.
-// It returns (archForYAML, imageURL, sha256Digest). If digest cannot be determined, it returns an empty string,
-// and the template conditionally omits the digest field.
+// resolveUbuntuImage selects an Ubuntu cloud image from a stable channel and returns
+// (archForYAML, imageURL, sha256Digest). The channel and series can be overridden via env:
+//   SILI_UBUNTU_CHANNEL: "release" (default) or "current"
+//   SILI_UBUNTU_SERIES:  Ubuntu codename, e.g. "noble" (24.04 LTS), "jammy" (22.04 LTS)
+// Default is the LTS releases channel to avoid digest races on "current".
 func resolveUbuntuImage() (string, string, string) {
 	var archYAML, fileSuffix string
 	switch runtime.GOARCH {
@@ -259,13 +261,45 @@ func resolveUbuntuImage() (string, string, string) {
 		// Default to arm64 settings; Lima will still error usefully if unsupported host
 		archYAML, fileSuffix = "aarch64", "arm64"
 	}
-	base := "https://cloud-images.ubuntu.com/noble/current/"
-	file := "noble-server-cloudimg-" + fileSuffix + ".img"
+
+	series := strings.TrimSpace(os.Getenv("SILI_UBUNTU_SERIES"))
+	if series == "" {
+		series = "noble" // 24.04 LTS
+	}
+	channel := strings.TrimSpace(os.Getenv("SILI_UBUNTU_CHANNEL"))
+	if channel == "" {
+		channel = "release" // stable by default
+	}
+
+	var base, file string
+	if channel == "current" {
+		// Moving pointer (risk of transient digest mismatch)
+		base = fmt.Sprintf("https://cloud-images.ubuntu.com/%s/current/", series)
+		file = fmt.Sprintf("%s-server-cloudimg-%s.img", series, fileSuffix)
+	} else {
+		// Stable LTS releases channel
+		version := seriesToVersion(series) // e.g., noble -> 24.04
+		base = fmt.Sprintf("https://cloud-images.ubuntu.com/releases/%s/release/", series)
+		file = fmt.Sprintf("ubuntu-%s-server-cloudimg-%s.img", version, fileSuffix)
+	}
 	url := base + file
 
-	// Best-effort digest lookup from SHA256SUMS
+	// Best-effort digest lookup from SHA256SUMS in the same directory
 	digest := fetchSHA256FromSums(base+"SHA256SUMS", file)
 	return archYAML, url, digest
+}
+
+// seriesToVersion converts Ubuntu series codename to the GA version string used in filenames.
+func seriesToVersion(series string) string {
+	switch strings.ToLower(series) {
+	case "noble":
+		return "24.04"
+	case "jammy":
+		return "22.04"
+	default:
+		// Fallback to noble's version if unknown; callers can override via env
+		return "24.04"
+	}
 }
 
 func fetchSHA256FromSums(sumsURL, fileName string) string {
