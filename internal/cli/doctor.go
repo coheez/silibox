@@ -12,9 +12,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	doctorFix bool
+)
+
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
 	Short: "Diagnose environment and dependencies",
+	Long:  "Diagnose environment and dependencies. Use --fix to automatically repair common issues.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		issues := []string{}
 		warnings := []string{}
@@ -85,6 +90,10 @@ var doctorCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+func init() {
+	doctorCmd.Flags().BoolVar(&doctorFix, "fix", false, "Automatically fix common issues")
 }
 
 func checkLimaInstallation() error {
@@ -164,7 +173,18 @@ func checkStateConsistency() error {
 
 	if !found {
 		if vm.Status == "running" {
-			return fmt.Errorf("state says VM is running but lima shows no VM - state may be stale")
+			if doctorFix {
+				fmt.Println("🔧 Fixing stale state (VM not found, updating state to stopped)...")
+				if err := state.WithLockedState(func(s *state.State) error {
+					s.UpdateVMStatus("stopped")
+					return nil
+				}); err != nil {
+					return fmt.Errorf("failed to fix state: %w", err)
+				}
+				fmt.Println("   ✅ State updated")
+				return nil
+			}
+			return fmt.Errorf("state says VM is running but lima shows no VM - state may be stale (run with --fix to repair)")
 		}
 		return nil
 	}
@@ -174,7 +194,18 @@ func checkStateConsistency() error {
 	actualStatus := strings.ToLower(inst.Status)
 
 	if stateStatus != actualStatus {
-		return fmt.Errorf("state inconsistency - state says '%s' but lima shows '%s' - run 'sili vm status --live' to check", vm.Status, inst.Status)
+		if doctorFix {
+			fmt.Printf("🔧 Fixing state inconsistency (updating state from '%s' to '%s')...\n", vm.Status, inst.Status)
+			if err := state.WithLockedState(func(s *state.State) error {
+				s.UpdateVMStatus(strings.ToLower(inst.Status))
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to fix state: %w", err)
+			}
+			fmt.Println("   ✅ State updated")
+			return nil
+		}
+		return fmt.Errorf("state inconsistency - state says '%s' but lima shows '%s' (run with --fix to repair)", vm.Status, inst.Status)
 	}
 
 	fmt.Println("✓ State is consistent with lima")
@@ -218,24 +249,61 @@ func checkContainerDesync() []string {
 
 	// Check each environment for desync
 	desyncCount := 0
+	fixedCount := 0
 	for _, env := range envs {
 		isRunning := runningMap[env.Name]
 
 		// Case 1: State says running but container doesn't exist or is stopped
 		if env.Status == "running" && !isRunning {
-			warnings = append(warnings, fmt.Sprintf("Environment '%s' marked as running in state but not found in Podman - run 'sili ls' to see status", env.Name))
+			if doctorFix {
+				fmt.Printf("🔧 Fixing desync: '%s' marked as running but not found (updating to stopped)...\n", env.Name)
+				if err := state.WithLockedState(func(s *state.State) error {
+					env := s.GetEnv(env.Name)
+					if env != nil {
+						env.Status = "stopped"
+						s.UpsertEnv(env)
+					}
+					return nil
+				}); err != nil {
+					warnings = append(warnings, fmt.Sprintf("Failed to fix '%s': %v", env.Name, err))
+				} else {
+					fmt.Println("   ✅ Fixed")
+					fixedCount++
+				}
+			} else {
+				warnings = append(warnings, fmt.Sprintf("Environment '%s' marked as running in state but not found in Podman (run with --fix to repair)", env.Name))
+			}
 			desyncCount++
 		}
 
 		// Case 2: Container is running but state says stopped (less critical)
 		if env.Status == "stopped" && isRunning {
-			warnings = append(warnings, fmt.Sprintf("Environment '%s' is running but marked as stopped in state - state will be updated on next operation", env.Name))
+			if doctorFix {
+				fmt.Printf("🔧 Fixing desync: '%s' is running but marked as stopped (updating to running)...\n", env.Name)
+				if err := state.WithLockedState(func(s *state.State) error {
+					env := s.GetEnv(env.Name)
+					if env != nil {
+						env.Status = "running"
+						s.UpsertEnv(env)
+					}
+					return nil
+				}); err != nil {
+					warnings = append(warnings, fmt.Sprintf("Failed to fix '%s': %v", env.Name, err))
+				} else {
+					fmt.Println("   ✅ Fixed")
+					fixedCount++
+				}
+			} else {
+				warnings = append(warnings, fmt.Sprintf("Environment '%s' is running but marked as stopped in state (run with --fix to repair)", env.Name))
+			}
 			desyncCount++
 		}
 	}
 
 	if desyncCount == 0 {
 		fmt.Printf("✓ All %d environment(s) in sync with Podman\n", len(envs))
+	} else if doctorFix && fixedCount > 0 {
+		fmt.Printf("✅ Fixed %d/%d desync issue(s)\n", fixedCount, desyncCount)
 	}
 
 	return warnings
