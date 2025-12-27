@@ -2,9 +2,11 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/coheez/silibox/internal/agent"
+	"github.com/coheez/silibox/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -32,6 +34,16 @@ configured timeout. Persistent containers (marked with --persistent) are never s
 If all containers are stopped and the VM has been idle, it can also be stopped to save
 resources.
 
+Configuration:
+  Settings can be configured in ~/.sili/config.yaml:
+    autosleep:
+      container_timeout: 15m
+      vm_timeout: 30m
+      poll_interval: 30s
+      no_stop_vm: false
+
+  Command-line flags override config file settings.
+
 Examples:
   # Run with default settings (15m container timeout, 30m VM timeout)
   sili agent autosleep
@@ -45,17 +57,37 @@ Examples:
   # Don't stop the VM, only containers
   sili agent autosleep --no-stop-vm`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Build config from flags
-		cfg := agent.AutosleepConfig{
-			ContainerIdleTimeout: agentContainerTimeout,
-			VMIdleTimeout:        agentVMTimeout,
-			PollInterval:         agentPollInterval,
-			StopVM:               !agentNoStopVM,
+		// Load config file (defaults if not found)
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+
+		// Override with flags if they were explicitly set
+		if cmd.Flags().Changed("container-timeout") {
+			cfg.Autosleep.ContainerTimeout = agentContainerTimeout
+		}
+		if cmd.Flags().Changed("vm-timeout") {
+			cfg.Autosleep.VMTimeout = agentVMTimeout
+		}
+		if cmd.Flags().Changed("poll-interval") {
+			cfg.Autosleep.PollInterval = agentPollInterval
+		}
+		if cmd.Flags().Changed("no-stop-vm") {
+			cfg.Autosleep.NoStopVM = agentNoStopVM
+		}
+
+		// Build agent config
+		agentCfg := agent.AutosleepConfig{
+			ContainerIdleTimeout: cfg.Autosleep.ContainerTimeout,
+			VMIdleTimeout:        cfg.Autosleep.VMTimeout,
+			PollInterval:         cfg.Autosleep.PollInterval,
+			StopVM:               !cfg.Autosleep.NoStopVM,
 		}
 
 		// Run the agent (blocks until interrupted)
 		ctx := context.Background()
-		return agent.RunAutosleep(ctx, cfg)
+		return agent.RunAutosleep(ctx, agentCfg)
 	},
 }
 
