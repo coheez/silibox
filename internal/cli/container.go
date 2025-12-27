@@ -9,6 +9,7 @@ import (
 
 	"github.com/coheez/silibox/internal/container"
 	"github.com/coheez/silibox/internal/state"
+	"github.com/coheez/silibox/internal/vm"
 	"github.com/spf13/cobra"
 )
 
@@ -62,6 +63,10 @@ var enterCmd = &cobra.Command{
 	Use:   "enter",
 	Short: "Enter an interactive shell in a running container",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Ensure VM is running (auto-wake)
+		if err := vm.EnsureVMRunning(); err != nil {
+			return err
+		}
 		return container.Enter(enterName, enterShell)
 	},
 }
@@ -72,6 +77,11 @@ var runCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) == 0 {
 			return fmt.Errorf("no command specified")
+		}
+
+		// Ensure VM is running (auto-wake)
+		if err := vm.EnsureVMRunning(); err != nil {
+			return err
 		}
 
 		runOpts := container.RunOptions{
@@ -162,6 +172,10 @@ var stopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stop a running container",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Ensure VM is running (auto-wake)
+		if err := vm.EnsureVMRunning(); err != nil {
+			return err
+		}
 		if err := container.Stop(stopName); err != nil {
 			return err
 		}
@@ -174,6 +188,10 @@ var rmCmd = &cobra.Command{
 	Use:   "rm",
 	Short: "Remove a container and clean up resources",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Ensure VM is running (auto-wake)
+		if err := vm.EnsureVMRunning(); err != nil {
+			return err
+		}
 		if err := container.Remove(rmName, rmForce); err != nil {
 			return err
 		}

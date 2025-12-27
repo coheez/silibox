@@ -7,6 +7,7 @@ import (
 
 	"github.com/coheez/silibox/internal/shim"
 	"github.com/coheez/silibox/internal/state"
+	"github.com/coheez/silibox/internal/vm"
 	"github.com/spf13/cobra"
 )
 
@@ -59,6 +60,11 @@ Examples:
 }
 
 func createShims(envName string, commands []string, force bool) error {
+	// Ensure VM is running (needed to verify commands exist)
+	if err := vm.EnsureVMRunning(); err != nil {
+		return err
+	}
+
 	// Verify environment exists
 	st, err := state.Load()
 	if err != nil {
