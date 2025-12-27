@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/coheez/silibox/internal/container"
+	"github.com/coheez/silibox/internal/lima"
+	"github.com/coheez/silibox/internal/state"
 )
 
 // AutosleepConfig configures the autosleep agent behavior
@@ -71,16 +73,12 @@ func RunAutosleep(ctx context.Context, cfg AutosleepConfig) error {
 }
 
 // checkAndStopIdle checks for idle containers and stops them
+// Also checks if VM should be stopped when fully idle
 func checkAndStopIdle(cfg AutosleepConfig) error {
 	// Get idle environments
 	idleEnvs, err := GetIdleEnvironments(cfg.ContainerIdleTimeout)
 	if err != nil {
 		return fmt.Errorf("failed to get idle environments: %w", err)
-	}
-
-	if len(idleEnvs) == 0 {
-		// No idle environments
-		return nil
 	}
 
 	// Stop each idle environment
@@ -97,6 +95,51 @@ func checkAndStopIdle(cfg AutosleepConfig) error {
 		fmt.Fprintf(os.Stderr, "   ✅ Stopped '%s'\n", env.Name)
 	}
 
+	// Check if VM should be stopped
+	if cfg.StopVM {
+		if err := checkAndStopVM(cfg); err != nil {
+			return fmt.Errorf("failed to check/stop VM: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// checkAndStopVM checks if the VM is idle and stops it if needed
+func checkAndStopVM(cfg AutosleepConfig) error {
+	// Check if VM is idle
+	idle, err := IsVMIdle(cfg.VMIdleTimeout)
+	if err != nil {
+		return err
+	}
+
+	if !idle {
+		// VM not idle yet
+		return nil
+	}
+
+	// Get VM info for logging
+	st, err := state.Load()
+	if err != nil {
+		return err
+	}
+
+	vm := st.GetVM()
+	if vm == nil {
+		// No VM to stop
+		return nil
+	}
+
+	// VM is idle - stop it
+	idleDuration := GetVMIdleDuration(vm)
+	fmt.Fprintf(os.Stderr, "💤 Stopping idle VM (idle for %s)...\n", formatDuration(idleDuration))
+
+	if err := lima.Stop(); err != nil {
+		fmt.Fprintf(os.Stderr, "   ⚠️  Failed to stop VM: %v\n", err)
+		return err
+	}
+
+	fmt.Fprintf(os.Stderr, "   ✅ VM stopped\n")
 	return nil
 }
 
