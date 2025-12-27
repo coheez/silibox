@@ -1,13 +1,17 @@
 package lima
 
 import (
+	"bufio"
 	"bytes"
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"text/template"
 	"time"
 
@@ -25,6 +29,13 @@ type Config struct {
 	CPUs   int
 	Memory string
 	Disk   string
+}
+
+type tmplData struct {
+	Config
+	Arch        string
+	ImageURL    string
+	ImageDigest string
 }
 
 type LimaInstance struct {
@@ -218,11 +229,64 @@ func ensureTemplate(cfg Config) error {
 		tmplContent = string(tmplBytes)
 	}
 
+	arch, imgURL, imgDigest := resolveUbuntuImage()
+	data := tmplData{
+		Config:      cfg,
+		Arch:        arch,
+		ImageURL:    imgURL,
+		ImageDigest: imgDigest,
+	}
+
 	var buf bytes.Buffer
-	if err := template.Must(template.New("lima").Parse(tmplContent)).Execute(&buf, cfg); err != nil {
+	t := template.Must(template.New("lima").Option("missingkey=zero").Parse(tmplContent))
+	if err := t.Execute(&buf, data); err != nil {
 		return err
 	}
 	return os.WriteFile(yamlPath, buf.Bytes(), 0o644)
+}
+
+// resolveUbuntuImage picks the appropriate Ubuntu Noble image URL and best-effort digest for the host arch.
+// It returns (archForYAML, imageURL, sha256Digest). If digest cannot be determined, it returns an empty string,
+// and the template conditionally omits the digest field.
+func resolveUbuntuImage() (string, string, string) {
+	var archYAML, fileSuffix string
+	switch runtime.GOARCH {
+	case "arm64":
+		archYAML, fileSuffix = "aarch64", "arm64"
+	case "amd64":
+		archYAML, fileSuffix = "x86_64", "amd64"
+	default:
+		// Default to arm64 settings; Lima will still error usefully if unsupported host
+		archYAML, fileSuffix = "aarch64", "arm64"
+	}
+	base := "https://cloud-images.ubuntu.com/noble/current/"
+	file := "noble-server-cloudimg-" + fileSuffix + ".img"
+	url := base + file
+
+	// Best-effort digest lookup from SHA256SUMS
+	digest := fetchSHA256FromSums(base+"SHA256SUMS", file)
+	return archYAML, url, digest
+}
+
+func fetchSHA256FromSums(sumsURL, fileName string) string {
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(sumsURL)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	defer resp.Body.Close()
+	s := bufio.NewScanner(resp.Body)
+	for s.Scan() {
+		line := s.Text()
+		// Lines look like: "<sha256> *noble-server-cloudimg-arm64.img"
+		if strings.HasSuffix(line, fileName) {
+			parts := strings.Fields(line)
+			if len(parts) > 0 {
+				return "sha256:" + parts[0]
+			}
+		}
+	}
+	return ""
 }
 
 // waitForRunning waits for the VM to reach Running state with a timeout
