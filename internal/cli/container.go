@@ -22,6 +22,7 @@ var (
 	createPorts         []string
 	createDetectVolumes bool
 	createNoMigrate     bool
+	createPersistent    bool
 	enterName           string
 	enterShell          string
 	runName             string
@@ -54,6 +55,7 @@ var createCmd = &cobra.Command{
 			Ports:                   createPorts,
 			DetectAndPrepareVolumes: createDetectVolumes,
 			NoMigrate:               createNoMigrate,
+			Persistent:              createPersistent,
 		}
 		return container.Create(cfg)
 	},
@@ -141,8 +143,8 @@ var lsCmd = &cobra.Command{
 		}
 
 		// Print header
-		fmt.Printf("%-20s %-15s %-30s %s\n", "NAME", "STATUS", "IMAGE", "LAST ACTIVE")
-		fmt.Println(strings.Repeat("-", 90))
+		fmt.Printf("%-20s %-15s %-30s %-12s %s\n", "NAME", "STATUS", "IMAGE", "PERSISTENT", "LAST ACTIVE")
+		fmt.Println(strings.Repeat("-", 100))
 
 		// Print each environment
 		for _, env := range envs {
@@ -161,7 +163,13 @@ var lsCmd = &cobra.Command{
 				image = image[:27] + "..."
 			}
 
-			fmt.Printf("%-20s %-15s %-30s %s\n", env.Name, status, image, lastActive)
+			// Format persistent indicator
+			persistent := ""
+			if env.Persistent {
+				persistent = "yes"
+			}
+
+			fmt.Printf("%-20s %-15s %-30s %-12s %s\n", env.Name, status, image, persistent, lastActive)
 		}
 
 		return nil
@@ -251,6 +259,7 @@ func init() {
 	createCmd.Flags().StringArrayVarP(&createPorts, "ports", "p", []string{}, "Port mappings (format: 3000 or 8080:80 or 8080:80/tcp)")
 	createCmd.Flags().BoolVar(&createDetectVolumes, "detect-volumes", false, "[Experimental] Enable automatic project stack detection and volume creation")
 	createCmd.Flags().BoolVar(&createNoMigrate, "no-migrate", false, "Skip migration prompts for existing directories when using --detect-volumes")
+	createCmd.Flags().BoolVar(&createPersistent, "persistent", false, "Mark environment as persistent (never auto-stopped by autosleep agent)")
 	enterCmd.Flags().StringVarP(&enterName, "name", "n", "silibox-dev", "Container name to enter")
 	enterCmd.Flags().StringVarP(&enterShell, "shell", "s", "bash", "Shell to use (bash, sh, zsh, etc.)")
 	runCmd.Flags().StringVarP(&runName, "name", "n", "silibox-dev", "Container name to run command in")

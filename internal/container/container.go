@@ -27,6 +27,7 @@ type CreateConfig struct {
 	Ports                   []string // Port specs like "3000" or "8080:80" or "8080:80/tcp"
 	DetectAndPrepareVolumes bool     // Auto-detect project stack and create volumes for hot dirs
 	NoMigrate               bool     // Skip migration prompts for existing directories
+	Persistent              bool     // Mark as persistent (never auto-stopped by autosleep)
 }
 
 // Create pulls the image and starts a named Podman container with proper bind mounts and UID/GID mapping
@@ -172,7 +173,7 @@ func Create(cfg CreateConfig) error {
 				Name: cfg.User,
 			},
 			Status:        "running",
-			Persistent:    false,
+			Persistent:    cfg.Persistent,
 			LastActive:    time.Now(),
 			ExportedShims: make([]string, 0),
 			MigratedDirs:  migratedDirs,
