@@ -1,86 +1,62 @@
 #!/bin/bash
-set -euo pipefail
+set -e
 
-# Silibox Installation Script for Alpha Testers
-# This script installs dependencies and builds Silibox
+# Detect OS and architecture
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m)
 
-echo "🚀 Silibox Alpha Installation"
-echo "=============================="
-
-# Check if we're on macOS
-if [[ "$OSTYPE" != "darwin"* ]]; then
-    echo "❌ Error: Silibox requires macOS"
+if [ "$OS" != "darwin" ]; then
+    echo "Error: silibox currently only supports macOS"
     exit 1
 fi
 
-# Check if Homebrew is installed
-if ! command -v brew &> /dev/null; then
-    echo "❌ Error: Homebrew is required but not installed"
-    echo "Install Homebrew: https://brew.sh/"
+case "$ARCH" in
+    x86_64) ARCH="amd64" ;;
+    arm64|aarch64) ARCH="arm64" ;;
+    *)
+        echo "Error: Unsupported architecture: $ARCH"
+        exit 1
+        ;;
+esac
+
+# Get latest release version
+echo "Fetching latest release..."
+VERSION=$(curl -s https://api.github.com/repos/coheez/silibox/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+if [ -z "$VERSION" ]; then
+    echo "Error: Could not determine latest version"
     exit 1
 fi
 
-echo "✅ macOS detected"
-echo "✅ Homebrew found"
+echo "Installing silibox ${VERSION}..."
 
-# Install Lima
-echo "📦 Installing Lima..."
-if ! command -v limactl &> /dev/null; then
-    brew install lima
-    echo "✅ Lima installed"
+# Download binary
+DOWNLOAD_URL="https://github.com/coheez/silibox/releases/download/${VERSION}/sili-${OS}-${ARCH}"
+TMP_FILE="/tmp/sili"
+
+echo "Downloading from ${DOWNLOAD_URL}..."
+if ! curl -L -o "$TMP_FILE" "$DOWNLOAD_URL"; then
+    echo "Error: Failed to download binary"
+    exit 1
+fi
+
+chmod +x "$TMP_FILE"
+
+# Install to /usr/local/bin
+INSTALL_DIR="/usr/local/bin"
+if [ ! -w "$INSTALL_DIR" ]; then
+    echo "Installing to $INSTALL_DIR (requires sudo)..."
+    sudo mv "$TMP_FILE" "$INSTALL_DIR/sili"
 else
-    echo "✅ Lima already installed"
+    mv "$TMP_FILE" "$INSTALL_DIR/sili"
 fi
 
-# Check Go installation
-echo "🔍 Checking Go installation..."
-if ! command -v go &> /dev/null; then
-    echo "❌ Error: Go is required but not installed"
-    echo "Install Go: https://golang.org/dl/"
-    exit 1
-fi
-
-GO_VERSION=$(go version | cut -d' ' -f3 | sed 's/go//')
-echo "✅ Go $GO_VERSION found"
-
-# Build Silibox
-echo "🔨 Building Silibox..."
-if ! make build; then
-    echo "❌ Error: Failed to build Silibox"
-    exit 1
-fi
-
-echo "✅ Silibox built successfully"
-
-# Optional: Install globally
-read -p "📦 Install Silibox globally? (y/N): " -n 1 -r
-echo
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    if make install; then
-        echo "✅ Silibox installed globally"
-        echo "You can now run 'sili' from anywhere"
-    else
-        echo "⚠️  Failed to install globally, but binary is available at ./bin/sili"
-    fi
-else
-    echo "ℹ️  Binary available at ./bin/sili"
-fi
-
-# Run doctor check
 echo ""
-echo "🔍 Running health check..."
-if ./bin/sili doctor; then
-    echo ""
-    echo "🎉 Installation complete!"
-    echo ""
-    echo "Next steps:"
-    echo "  1. Start VM: ./bin/sili vm up"
-    echo "  2. Create environment: ./bin/sili create --name my-project"
-    echo "  3. Enter shell: ./bin/sili enter --name my-project"
-    echo ""
-    echo "For help: ./bin/sili --help"
-else
-    echo ""
-    echo "⚠️  Installation complete but some issues detected"
-    echo "Run './bin/sili doctor' to see details"
-fi
+echo "✓ silibox installed successfully!"
+echo ""
+echo "Next steps:"
+echo "  1. Install Lima: brew install lima"
+echo "  2. Run 'sili doctor' to verify your environment"
+echo "  3. Run 'sili vm up' to start the Linux VM"
+echo "  4. Run 'sili create --name dev' to create a development environment"
+echo ""
+echo "For more information, visit https://github.com/coheez/silibox"

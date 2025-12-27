@@ -14,22 +14,25 @@ Silibox provides seamless Linux development environments on macOS using Lima (Li
 
 ### Installation
 
-1. **Install Lima:**
-   ```bash
-   brew install lima
-   ```
+**One-line install:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/coheez/silibox/main/scripts/install.sh | bash
+```
 
-2. **Build Silibox:**
-   ```bash
-   git clone https://github.com/coheez/silibox.git
-   cd silibox
-   make build
-   ```
+This will download and install the latest release. Then:
 
-3. **Install globally (optional):**
-   ```bash
-   make install
-   ```
+```bash
+brew install lima  # Install Lima VM manager
+sili doctor        # Verify installation
+```
+
+**Or build from source:**
+```bash
+git clone https://github.com/coheez/silibox.git
+cd silibox
+make build
+make install  # Optional: install globally
+```
 
 ## 📖 Usage
 
